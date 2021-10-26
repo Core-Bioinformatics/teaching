@@ -1,0 +1,308 @@
+---
+title: "IntroML_AZ_caret"
+output: html_document
+---
+
+# Introduction to caret
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading packages,echo=FALSE}
+library(caret)
+```
+
+## Preprocessing with the Iris dataset
+
+From the iris manual page:
+
+The famous (Fisher’s or Anderson’s) Iris data set, first presented by Fisher in 1936 (http://archive.ics.uci.edu/ml/datasets/Iris), gives the measurements in centimeters of the variables sepal length and width and petal length and width, respectively, for 50 flowers from each of 3 species of iris. The species are Iris setosa, versicolor, and virginica. One class is linearly separable from the other two; the latter are not linearly separable from each other. The data base contains the following attributes: 1). sepal length in cm 2). sepal width in cm 3). petal length in cm 4). petal width in cm 5). classes: - Iris Setosa - Iris Versicolour - Iris Virginica
+
+
+```{r load iris,warning=FALSE}
+library(datasets)
+data(iris) ##loads the dataset, which can be accessed under the variable name iris
+?iris
+summary(iris) ##presents the 5 figure summary of the dataset
+str(iris) ##presents the structure of the iris dataframe
+```
+
+```{r split into training and test}
+set.seed(23)
+trainTestPartition<-createDataPartition(y=iris$Species, #the class label, caret ensures an even split of classes
+                                        p=0.7, #proportion of samples assigned to train
+                                        list=FALSE)
+str(trainTestPartition)
+
+training <- iris[ trainTestPartition,] #take the corresponding rows for training
+testing  <- iris[-trainTestPartition,] #take the corresponding rows for testing by removing training rows
+summary(training)
+nrow(training)
+summary(testing)
+nrow(testing)
+```
+We usually want to apply some preprocessing to our datasets to bring different predictors in line and make sure we are not introducing any extra bias. In caret, we can apply different preprocessing methods separately, together in the preProcessing function or just within the model training itself.
+
+### Applying preprocessing functions separately
+
+```{r separate preprocessing}
+training.separate = training
+testing.separate = testing
+```
+
+The function nearZeroVar identifies predictors that have one unique value. It also diagnoses predictors having both of the following characteristics:
+- very few unique values relative to the number of samples
+- the ratio of the frequency of the most common value to the frequency of the 2nd most common value is large.
+
+Such zero and near zero-variance predictors have a deleterious impact on modelling and may lead to unstable fits.
+
+```{r nzv}
+nzv(training.separate)
+```
+Some datasets can have many highly correlated variables. caret has a function findCorrelation to remove highly correlated variables. It considers the absolute values of pair-wise correlations. If two variables are highly correlated, it looks at the mean absolute correlation of each variable and removes the variable with the largest mean absolute correlation. This method is also used in when you specify 'corr' in the preProcess function below.
+
+In the case of data-sets comprised of many highly correlated variables, an alternative to removing correlated predictors is the transformation of the entire data set to a lower dimensional space, using a technique such as principal component analysis (PCA).
+
+```{r high correlation}
+calculateCor <- cor(training.separate[1:4]) #calculate correlation matrix on the predictors
+summary(calculateCor[upper.tri(calculateCor)])
+highlyCor <- findCorrelation(calculateCor) #pick highly correlated ones
+colnames(training.separate)[highlyCor]
+
+training.separate.cor=training.separate[,-highlyCor] #remove highly correlated predictors from training
+testing.separate.cor=testing.separate[,-highlyCor] #remove highly correlated predictors from test
+```
+caret provides various methods for transforming skewed variables to normality, including the Box-Cox (Box and Cox 1964) and Yeo-Johnson (Yeo and Johnson 2000) transformations. Here we try using the Box-Cox method.
+
+```{r boxcox}
+#perform boxcox scaling on each predictor
+training.separate.boxcox=training.separate
+training.separate.boxcox$Sepal.Length=predict(BoxCoxTrans(iris$Sepal.Length),
+                                       training.separate.cor$Sepal.Length)
+training.separate.boxcox$Sepal.Width=predict(BoxCoxTrans(iris$Sepal.Width),
+                                      training.separate.cor$Sepal.Width)
+training.separate.boxcox$Petal.Width=predict(BoxCoxTrans(iris$Petal.Width),
+                                      training.separate.cor$Petal.Width)
+
+testing.separate.boxcox=testing.separate
+testing.separate.boxcox$Sepal.Length=predict(BoxCoxTrans(iris$Sepal.Length),
+                                      testing.separate.cor$Sepal.Length)
+testing.separate.boxcox$Sepal.Width=predict(BoxCoxTrans(iris$Sepal.Width),
+                                     testing.separate.cor$Sepal.Width)
+testing.separate.boxcox$Petal.Width=predict(BoxCoxTrans(iris$Petal.Width),
+                                     testing.separate.cor$Petal.Width)
+
+summary(training.separate.boxcox)
+summary(testing.separate.boxcox)
+```
+
+### Using preProcess function
+
+In this situation it is also important to centre and scale each predictor. A predictor variable is centered by subtracting the mean of the predictor from each value. To scale a predictor variable, each value is divided by its standard deviation. After centring and scaling the predictor variable has a mean of 0 and a standard deviation of 1.
+
+```{r preprocess function}
+
+#The options for preprocessing are "BoxCox", "YeoJohnson", "expoTrans", "center", "scale", "range", "knnImpute", "bagImpute", "medianImpute", "pca", "ica", "spatialSign", "corr", "zv", "nzv", and "conditionalX"
+calculatePreProcess <- preProcess(training,
+                                  method = c("center", "scale","corr","nzv","BoxCox")) #perform preprocessing
+calculatePreProcess
+
+training.preprocess <- predict(calculatePreProcess, training) #apply preprocessing to training data
+summary(training.preprocess)
+#Petal.Length is removed
+testing.preprocess <- predict(calculatePreProcess, testing) #apply same preprocessing to testing data
+summary(testing.preprocess)
+
+dtreeIris.preprocess <- train(
+    Species ~ .,
+    data = training.preprocess,
+    method = "rpart" #this is a decision tree but we will get to more information about that later
+)
+dtreeIris.preprocess
+```
+
+### Adding preprocessing within training
+
+```{r preprocessing in training}
+dtreeIris <- train(
+    Species ~ .,
+    data = training,
+    method = "rpart",
+    preProc = c("center", "scale","nzv","corr","BoxCox") #this performs the preprocessing within model training
+)
+dtreeIris
+```
+## Training different types of models
+
+caret enables the easy use of many different types of models, a few of which we will cover in the course. The full list is here https://topepo.github.io/caret/available-models.html
+
+We can change the model we use by changing the 'method' parameter in the train function. For example:
+
+```{r change method}
+#decision tree
+dtreeIris <- train(
+    Species ~ .,
+    data = training,
+    method = "rpart",
+    preProc = c("center", "scale","nzv","corr","BoxCox")
+)
+
+#support vector machine
+svmIris <- train(
+    Species ~ .,
+    data = training,
+    method = "svmLinear",
+    preProc = c("center", "scale","nzv","corr","BoxCox")
+)
+
+#random forest
+randomForestIris <- train(
+    Species ~ .,
+    data = training,
+    method = "rf",
+    preProc = c("center", "scale","nzv","corr","BoxCox")
+)
+
+
+
+```
+
+## Cross-validation
+
+As we talked about in the last session, cross-validation is important to ensure the robustness of our models. We can specify how we want to perform cross-validation to caret.
+
+```{r cross validation}
+train_ctrl = trainControl(method='cv',
+                          number=10) #10-fold cross-validation
+
+dtreeIris.10fold <- train(
+    Species ~ .,
+    data = training,
+    method = "rpart",
+    preProc = c("center", "scale","nzv","corr","BoxCox"),
+    trControl = train_ctrl #train decision tree with 10-fold cross-validation
+)
+dtreeIris.10fold
+
+```
+You may notice that every time you run the last chunk you get slightly different answers. To make our analysis reproducible, we need to set some seeds. Rather than setting a single seed, we need to set quite a few as caret uses them in different places.
+
+```{r set seed for cross validation}
+set.seed(42)
+seeds = vector(mode='list',length=11) #this is #folds+1 so 10+1
+for (i in 1:10) seeds[[i]] = sample.int(1000,10)
+seeds[[11]] = sample.int(1000,1)
+
+train_ctrl_seed = trainControl(method='cv',
+                          number=10,
+                          seeds=seeds) #use our seeds in the cross-validation
+
+
+dtreeIris.10fold.seed <- train(
+    Species ~ .,
+    data = training,
+    method = "rpart",
+    preProc = c("center", "scale","nzv","corr","BoxCox"),
+    trControl = train_ctrl_seed
+)
+dtreeIris.10fold.seed
+```
+
+If you try running this chunk multiple times, you will see the same answer each time
+
+If you wanted to use repeated cross-validation instead of cross-validation, you can use:
+
+```{r repeated cross validation}
+set.seed(42)
+seeds = vector(mode='list',length=101) #you need length #folds*#repeats + 1 so 10*10 + 1 here
+for (i in 1:100) seeds[[i]] = sample.int(1000,10)
+seeds[[101]] = sample.int(1000,1)
+
+train_ctrl_seed_repeated = trainControl(method='repeatedcv',
+                              number=10, #number of folds
+                              repeats=10, #number of times to repeat cross-validation
+                              seeds=seeds)
+
+
+dtreeIris.10fold.seed.repeated <- train(
+    Species ~ .,
+    data = training,
+    method = "rpart",
+    preProc = c("center", "scale","nzv","corr","BoxCox"),
+    trControl = train_ctrl_seed_repeated
+)
+dtreeIris.10fold.seed.repeated
+
+```
+## Optimising hyperparameters
+
+For different models, we need optimise different hyperparameters. To specify the different values we wish to consider, we use the tuneGrid or tuneLength parameters. In the decision tree example, we can optimise the cp value. Instead of looking at only 3 values, we may want to look at 10:
+
+```{r tune length and tune grid}
+dtreeIris.hyperparam <- train(
+    Species ~ .,
+    data = training,
+    method = "rpart",
+    preProc = c("center", "scale","nzv","corr","BoxCox"),
+    trControl = train_ctrl_seed_repeated,
+    tuneLength = 10 #pick number of different hyperparam values to try
+)
+dtreeIris.hyperparam
+
+```
+We will see more example of this parameter as we explore different types of models.
+
+## Using dummy variables with the Sacramento dataset
+
+If you have categorical predictors instead of continuous numeric variables, you may need to convert your categorical variable to a series of dummy variables. We will show this method on the Sacramento dataset.
+
+From the documentation:
+This data frame contains house and sale price data for 932 homes in Sacramento CA. The original data were obtained from the website for the SpatialKey software. From their website: "The Sacramento real estate transactions file is a list of 985 real estate transactions in the Sacramento area reported over a five-day period, as reported by the Sacramento Bee." Google was used to fill in missing/incorrect data.
+
+```{r load Sacramento}
+data("Sacramento") ##loads the dataset, which can be accessed under the variable name Sacramento
+?Sacramento
+str(Sacramento)
+```
+
+```{r Sacramento dummies}
+dummies = dummyVars(price ~ ., data = Sacramento) #convert the categorical variables to dummies
+Sacramento.dummies = data.frame(predict(dummies, newdata = Sacramento))
+Sacramento.dummies$price=Sacramento$price
+```
+Once we have dummified, we can just split the data into training and test and train a model like with the Iris data.
+
+```{r Sacramento split training test}
+set.seed(23)
+trainTestPartition.Sacramento<-createDataPartition(y=Sacramento.dummies$price, #the class label, caret ensures an even split of classes
+                                        p=0.7, #proportion of samples assigned to train
+                                        list=FALSE)
+training.Sacramento <- Sacramento.dummies[ trainTestPartition.Sacramento,]
+testing.Sacramento  <- Sacramento.dummies[-trainTestPartition.Sacramento,]
+```
+
+```{r Sacramento decision tree dummies}
+lmSacramento <- train(
+    price ~ .,
+    data = training.Sacramento,
+    method = "lm",
+    preProc = c("center", "scale","nzv","corr","BoxCox")
+)
+lmSacramento
+```
+We can also train without using dummy variables and compare.
+
+```{r Sacramento decision tree non-dummies}
+training.Sacramento.nondummy <- Sacramento[ trainTestPartition.Sacramento,]
+testing.Sacramento.nondummy  <- Sacramento[-trainTestPartition.Sacramento,]
+
+lmSacramento.nondummy <- train(
+    price ~ .,
+    data = training.Sacramento.nondummy,
+    method = "lm",
+    preProc = c("center", "scale","nzv","corr","BoxCox")
+)
+lmSacramento.nondummy
+```
+
