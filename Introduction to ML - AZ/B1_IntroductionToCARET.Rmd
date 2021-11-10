@@ -1,15 +1,15 @@
 ---
-title: "IntroML_AZ_caret"
+title: "Introduction to CARET"
 output: html_document
 ---
 
-# Introduction to caret
+The **caret** package (short for **C**lassification **A**nd **RE**gression **T**raining) contains functions to streamline the model training process for classification and regression tasks.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r loading packages,echo=FALSE}
+```{r loading packages}
 library(caret)
 ```
 
@@ -23,10 +23,11 @@ The famous (Fisher’s or Anderson’s) Iris data set, first presented by Fisher
 ```{r load iris,warning=FALSE}
 library(datasets)
 data(iris) ##loads the dataset, which can be accessed under the variable name iris
-?iris
+?iris ##opens the documentation for the dataset
 summary(iris) ##presents the 5 figure summary of the dataset
 str(iris) ##presents the structure of the iris dataframe
 ```
+First, we split into training and test datasets, using the proportions 70% training and 30% test. The function createDataPartition ensures that the proportion of each class is the same in training and test.
 
 ```{r split into training and test}
 set.seed(23)
@@ -51,6 +52,8 @@ training.separate = training
 testing.separate = testing
 ```
 
+*Near-Zero Variance*
+
 The function nearZeroVar identifies predictors that have one unique value. It also diagnoses predictors having both of the following characteristics:
 - very few unique values relative to the number of samples
 - the ratio of the frequency of the most common value to the frequency of the 2nd most common value is large.
@@ -60,6 +63,10 @@ Such zero and near zero-variance predictors have a deleterious impact on modelli
 ```{r nzv}
 nzv(training.separate)
 ```
+In this case, we have no near zero variance predictors but that will not always be the case.
+
+*Highly Correlated*
+
 Some datasets can have many highly correlated variables. caret has a function findCorrelation to remove highly correlated variables. It considers the absolute values of pair-wise correlations. If two variables are highly correlated, it looks at the mean absolute correlation of each variable and removes the variable with the largest mean absolute correlation. This method is also used in when you specify 'corr' in the preProcess function below.
 
 In the case of data-sets comprised of many highly correlated variables, an alternative to removing correlated predictors is the transformation of the entire data set to a lower dimensional space, using a technique such as principal component analysis (PCA).
@@ -69,10 +76,14 @@ calculateCor <- cor(training.separate[1:4]) #calculate correlation matrix on the
 summary(calculateCor[upper.tri(calculateCor)])
 highlyCor <- findCorrelation(calculateCor) #pick highly correlated ones
 colnames(training.separate)[highlyCor]
-
+corrplot::corrplot(calculateCor,diag=FALSE)
 training.separate.cor=training.separate[,-highlyCor] #remove highly correlated predictors from training
 testing.separate.cor=testing.separate[,-highlyCor] #remove highly correlated predictors from test
 ```
+Here, we have one highly correlated variable, Petal Length.
+
+*Skewness*
+
 caret provides various methods for transforming skewed variables to normality, including the Box-Cox (Box and Cox 1964) and Yeo-Johnson (Yeo and Johnson 2000) transformations. Here we try using the Box-Cox method.
 
 ```{r boxcox}
@@ -96,10 +107,11 @@ testing.separate.boxcox$Petal.Width=predict(BoxCoxTrans(iris$Petal.Width),
 summary(training.separate.boxcox)
 summary(testing.separate.boxcox)
 ```
+In this situation it is also important to centre and scale each predictor. A predictor variable is centered by subtracting the mean of the predictor from each value. To scale a predictor variable, each value is divided by its standard deviation. After centring and scaling the predictor variable has a mean of 0 and a standard deviation of 1.
 
 ### Using preProcess function
 
-In this situation it is also important to centre and scale each predictor. A predictor variable is centered by subtracting the mean of the predictor from each value. To scale a predictor variable, each value is divided by its standard deviation. After centring and scaling the predictor variable has a mean of 0 and a standard deviation of 1.
+Instead of using separate functions, we can add all the preprocessing into one function call to preProcess.
 
 ```{r preprocess function}
 
@@ -124,16 +136,20 @@ dtreeIris.preprocess
 
 ### Adding preprocessing within training
 
+Finally, we can combine the preprocessing step with training the model, using the *preProc* parameter in caret's train function.
+
 ```{r preprocessing in training}
 dtreeIris <- train(
-    Species ~ .,
-    data = training,
-    method = "rpart",
-    preProc = c("center", "scale","nzv","corr","BoxCox") #this performs the preprocessing within model training
+    Species ~ ., ## this means the model should classify Species using the other features
+    data = training, ## specifies training data
+    method = "rpart", ## uses decision tree
+    preProc = c("center", "scale","nzv","corr","BoxCox") ##this performs the preprocessing within model training
 )
 dtreeIris
 ```
 ## Training different types of models
+
+One of the primary tools in the package is this *train* function which can be used to evaluate, using resampling, the effect of model tuning parameters on performance, choose the 'optimal' model across these parameters and estimate model performance from a training set.
 
 caret enables the easy use of many different types of models, a few of which we will cover in the course. The full list is here https://topepo.github.io/caret/available-models.html
 
@@ -142,8 +158,8 @@ We can change the model we use by changing the 'method' parameter in the train f
 ```{r change method}
 #decision tree
 dtreeIris <- train(
-    Species ~ .,
-    data = training,
+    Species ~ ., 
+    data = training, 
     method = "rpart",
     preProc = c("center", "scale","nzv","corr","BoxCox")
 )
@@ -271,6 +287,7 @@ dummies = dummyVars(price ~ ., data = Sacramento) #convert the categorical varia
 Sacramento.dummies = data.frame(predict(dummies, newdata = Sacramento))
 Sacramento.dummies$price=Sacramento$price
 ```
+
 Once we have dummified, we can just split the data into training and test and train a model like with the Iris data.
 
 ```{r Sacramento split training test}
