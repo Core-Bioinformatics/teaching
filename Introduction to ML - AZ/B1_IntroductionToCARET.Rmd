@@ -134,19 +134,6 @@ dtreeIris.preprocess <- train(
 dtreeIris.preprocess
 ```
 
-### Adding preprocessing within training
-
-Finally, we can combine the preprocessing step with training the model, using the *preProc* parameter in caret's train function.
-
-```{r preprocessing in training}
-dtreeIris <- train(
-    Species ~ ., ## this means the model should classify Species using the other features
-    data = training, ## specifies training data
-    method = "rpart", ## uses decision tree
-    preProc = c("center", "scale","nzv","corr","BoxCox") ##this performs the preprocessing within model training
-)
-dtreeIris
-```
 ## Training different types of models
 
 One of the primary tools in the package is this *train* function which can be used to evaluate, using resampling, the effect of model tuning parameters on performance, choose the 'optimal' model across these parameters and estimate model performance from a training set.
@@ -159,30 +146,40 @@ We can change the model we use by changing the 'method' parameter in the train f
 #decision tree
 dtreeIris <- train(
     Species ~ ., 
-    data = training, 
-    method = "rpart",
-    preProc = c("center", "scale","nzv","corr","BoxCox")
+    data = training.preprocess, ##make sure you use the preprocessed version
+    method = "rpart" #specifies decision tree
 )
 
 #support vector machine
 svmIris <- train(
     Species ~ .,
-    data = training,
-    method = "svmLinear",
-    preProc = c("center", "scale","nzv","corr","BoxCox")
+    data = training.preprocess, ##make sure you use the preprocessed version
+    method = "svmLinear" #specifies support vector machine with linear kernel
 )
 
 #random forest
 randomForestIris <- train(
     Species ~ .,
-    data = training,
-    method = "rf",
-    preProc = c("center", "scale","nzv","corr","BoxCox")
+    data = training.preprocess, ##make sure you use the preprocessed version
+    method = "rf" ##specifies random forest
 )
 
-
-
 ```
+
+### Adding preprocessing within training
+
+We can combine the preprocessing step with training the model, using the *preProc* parameter in caret's train function.
+
+```{r preprocessing in training}
+dtreeIris <- train(
+    Species ~ ., ## this means the model should classify Species using the other features
+    data = training, ## specifies training data (without preprocessing)
+    method = "rpart", ## uses decision tree
+    preProc = c("center", "scale","nzv","corr","BoxCox") ##this performs the preprocessing within model training
+)
+dtreeIris
+```
+
 
 ## Cross-validation
 

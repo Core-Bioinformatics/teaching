@@ -625,12 +625,39 @@ dtreeIris.preprocess</code></pre>
 ## Accuracy was used to select the optimal model using the largest value.
 ## The final value used for the model was cp = 0.</code></pre>
 </div>
+</div>
+<div id="training-different-types-of-models" class="section level2">
+<h2>Training different types of models</h2>
+<p>One of the primary tools in the package is this <em>train</em> function which can be used to evaluate, using resampling, the effect of model tuning parameters on performance, choose the ‘optimal’ model across these parameters and estimate model performance from a training set.</p>
+<p>caret enables the easy use of many different types of models, a few of which we will cover in the course. The full list is here <a href="https://topepo.github.io/caret/available-models.html" class="uri">https://topepo.github.io/caret/available-models.html</a></p>
+<p>We can change the model we use by changing the ‘method’ parameter in the train function. For example:</p>
+<pre class="r"><code>#decision tree
+dtreeIris &lt;- train(
+    Species ~ ., 
+    data = training.preprocess, ##make sure you use the preprocessed version
+    method = &quot;rpart&quot; #specifies decision tree
+)
+
+#support vector machine
+svmIris &lt;- train(
+    Species ~ .,
+    data = training.preprocess, ##make sure you use the preprocessed version
+    method = &quot;svmLinear&quot; #specifies support vector machine with linear kernel
+)
+
+#random forest
+randomForestIris &lt;- train(
+    Species ~ .,
+    data = training.preprocess, ##make sure you use the preprocessed version
+    method = &quot;rf&quot; ##specifies random forest
+)</code></pre>
+<pre><code>## note: only 2 unique complexity parameters in default grid. Truncating the grid to 2 .</code></pre>
 <div id="adding-preprocessing-within-training" class="section level3">
 <h3>Adding preprocessing within training</h3>
-<p>Finally, we can combine the preprocessing step with training the model, using the <em>preProc</em> parameter in caret’s train function.</p>
+<p>We can combine the preprocessing step with training the model, using the <em>preProc</em> parameter in caret’s train function.</p>
 <pre class="r"><code>dtreeIris &lt;- train(
     Species ~ ., ## this means the model should classify Species using the other features
-    data = training, ## specifies training data
+    data = training, ## specifies training data (without preprocessing)
     method = &quot;rpart&quot;, ## uses decision tree
     preProc = c(&quot;center&quot;, &quot;scale&quot;,&quot;nzv&quot;,&quot;corr&quot;,&quot;BoxCox&quot;) ##this performs the preprocessing within model training
 )
@@ -647,42 +674,13 @@ dtreeIris</code></pre>
 ## Resampling results across tuning parameters:
 ## 
 ##   cp         Accuracy   Kappa    
-##   0.0000000  0.9334003  0.8981064
-##   0.4285714  0.6987392  0.5561994
-##   0.5000000  0.5513771  0.3487306
+##   0.0000000  0.9191387  0.8770505
+##   0.4285714  0.7166744  0.5883769
+##   0.5000000  0.5276405  0.3239631
 ## 
 ## Accuracy was used to select the optimal model using the largest value.
 ## The final value used for the model was cp = 0.</code></pre>
 </div>
-</div>
-<div id="training-different-types-of-models" class="section level2">
-<h2>Training different types of models</h2>
-<p>One of the primary tools in the package is this <em>train</em> function which can be used to evaluate, using resampling, the effect of model tuning parameters on performance, choose the ‘optimal’ model across these parameters and estimate model performance from a training set.</p>
-<p>caret enables the easy use of many different types of models, a few of which we will cover in the course. The full list is here <a href="https://topepo.github.io/caret/available-models.html" class="uri">https://topepo.github.io/caret/available-models.html</a></p>
-<p>We can change the model we use by changing the ‘method’ parameter in the train function. For example:</p>
-<pre class="r"><code>#decision tree
-dtreeIris &lt;- train(
-    Species ~ ., 
-    data = training, 
-    method = &quot;rpart&quot;,
-    preProc = c(&quot;center&quot;, &quot;scale&quot;,&quot;nzv&quot;,&quot;corr&quot;,&quot;BoxCox&quot;)
-)
-
-#support vector machine
-svmIris &lt;- train(
-    Species ~ .,
-    data = training,
-    method = &quot;svmLinear&quot;,
-    preProc = c(&quot;center&quot;, &quot;scale&quot;,&quot;nzv&quot;,&quot;corr&quot;,&quot;BoxCox&quot;)
-)
-
-#random forest
-randomForestIris &lt;- train(
-    Species ~ .,
-    data = training,
-    method = &quot;rf&quot;,
-    preProc = c(&quot;center&quot;, &quot;scale&quot;,&quot;nzv&quot;,&quot;corr&quot;,&quot;BoxCox&quot;)
-)</code></pre>
 </div>
 <div id="cross-validation" class="section level2">
 <h2>Cross-validation</h2>
@@ -706,13 +704,13 @@ dtreeIris.10fold</code></pre>
 ## 
 ## Pre-processing: centered (3), scaled (3), Box-Cox transformation (3), remove (1) 
 ## Resampling: Cross-Validated (10 fold) 
-## Summary of sample sizes: 94, 94, 95, 96, 95, 93, ... 
+## Summary of sample sizes: 94, 95, 94, 95, 94, 94, ... 
 ## Resampling results across tuning parameters:
 ## 
-##   cp         Accuracy   Kappa     
-##   0.0000000  0.9366162  0.90458333
-##   0.4285714  0.6743939  0.52004329
-##   0.5000000  0.3557576  0.08571429
+##   cp         Accuracy   Kappa    
+##   0.0000000  0.9336364  0.8997500
+##   0.4285714  0.6563636  0.4960712
+##   0.5000000  0.3763636  0.1285714
 ## 
 ## Accuracy was used to select the optimal model using the largest value.
 ## The final value used for the model was cp = 0.</code></pre>
