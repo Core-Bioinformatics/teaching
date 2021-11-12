@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 
 cran.packages<-c("caret",
+                 "gmodels",
                  "tidyverse",
                  "rpart",
                  "rpart.plot",
