@@ -1,0 +1,620 @@
+---
+title: 'mRNAseq analysis: Yang 2019'
+author: |
+  | Eleanor Williams
+  | CSCI
+date: "01/03/21"
+output:
+  html_document:
+    df_print: paged
+---
+
+The paper presenting this data can be accessed at https://pubmed.ncbi.nlm.nih.gov/31078527/ and the samples can be found on GEO at https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE117896
+
+The 0h and 12h samples are used here and there are 2 biological replicates for each (SRR7624365,SRR7624366 and SRR7624371,SRR7624372 respectively)
+
+## Installing and loading the required packages
+
+### Installing CRAN packages
+
+```{r installing CRAN packages, message=FALSE}
+cran.packages = c("tidyr",
+                  "ggplot2",
+                  "ggrepel",
+                  "gridExtra",
+                  "NMF",
+                  "GGally",
+                  "gprofiler2",
+                  "UpSetR"
+)
+
+new.packages <- cran.packages[!(cran.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+```
+
+### Installing Bioconductor packages
+
+```{r installing bioconductor packages,message=FALSE}
+bioconductor.packages = c("preprocessCore",
+                           "edgeR",
+                           "DESeq2")
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(update = TRUE,ask=FALSE)
+new.bio.packages<-bioconductor.packages[!(bioconductor.packages %in% installed.packages()[,"Package"])]
+if(length(new.bio.packages)) BiocManager::install(new.bio.packages)
+```
+
+### Loading packages
+
+```{r loading packages,message=FALSE}
+library(tidyr)
+library(ggplot2); theme_set(theme_bw())
+library(preprocessCore)
+library(ggrepel)
+library(gridExtra)
+library(edgeR)
+library(DESeq2)
+library(NMF)
+library(GGally)
+library(gprofiler2)
+library(UpSetR)
+```
+
+## Creating the count matrix from featureCounts output
+
+```{r get list of samples}
+meta = data.frame(id=c('SRR7624365','SRR7624366','SRR7624371','SRR7624372'),
+                  rep=c(1,2,1,2),
+                  timepoint=c('0h','0h','12h','12h')
+    )
+rownames(meta)=meta$id
+meta$timepoint = as.factor(meta$timepoint)
+listofsamples = paste0(meta$id,'_counts.txt')
+print(listofsamples)
+```
+
+### Look at first sample
+
+```{r read first sample}
+first.sample=read.csv(listofsamples[1],sep='\t',skip=1)
+```
+
+```{r structure of first sample}
+str(first.sample)
+```
+
+```{r summarise expression from first sample}
+summary(first.sample$SRR7624365__Aligned.out.bam)
+```
+
+```{r head of first sample}
+head(first.sample)
+```
+
+```{r head of gene ID and expression from first sample}
+head(first.sample[,c(1,7)])
+```
+
+### Create count matrix
+
+```{r}
+cts = data.frame(gene_id = read.csv(listofsamples[1],sep='\t',skip=1)[,1])
+rownames(cts) = cts$gene_id
+
+for (i in meta$id){
+  print(i)
+  currentfile = read.csv(paste(i,'_counts.txt',sep=''),sep='\t',skip=1) ##read each sample
+  cts[,i]=currentfile[,7] ##take expression column and add to count matrix
+}
+cts = subset(cts,select=-c(gene_id))
+
+cts = cts[rowSums(cts) > 0,] ##get rid of zero expression genes
+head(cts)
+```
+
+## Initial QC
+
+### Visualising distribution of abundance per sample
+
+```{r density qc function,fig.height=4}
+qc.plots<-function(cts,title){
+cts.tidy = pivot_longer(cts, cols=colnames(cts), names_to='sample', values_to='expression')
+# we now remove 0 counts to create more understandable visualizations
+cts.tidy$expression[cts.tidy$expression == 0] = NA
+cts.tidy$log.expression=log2(cts.tidy$expression)
+
+a<-ggplot(drop_na(cts.tidy), aes(x=log.expression, color=sample)) +
+  geom_density(alpha=0.3)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  theme(plot.title = element_text(size=10))
+b<-ggplot(drop_na(cts.tidy), aes(x=sample, y=log.expression,color=sample)) +
+  geom_violin(alpha=0.3) + 
+  theme(legend.position = "none")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  theme(plot.title = element_text(size=10))+
+  theme(axis.text.x=element_blank())
+c<-ggplot(drop_na(cts.tidy), aes(x=sample, y=log.expression,color=sample)) +
+  geom_boxplot(alpha=0.3) + 
+  theme(legend.position = "none")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  theme(plot.title = element_text(size=10))+
+  theme(axis.text.x=element_blank())
+  grid.arrange(a,arrangeGrob(b,c),nrow=1,top=title,widths=2:1)
+}
+```
+
+```{r unfiltered unnormalised density}
+qc.plots(cts,'Unfiltered and unnormalised')
+```
+
+### ggpairs
+
+```{r ggpairs, message=FALSE}
+ggpairs(cts)
+```
+
+### Comparing replicates
+
+```{r,fig.height=3.5}
+grid.arrange(ggplot(cts, aes(x=SRR7624365, y=SRR7624366)) + 
+        geom_point() + 
+        xlab('0h rep 1 abundance') + 
+        ylab('0h rep 2 abundance'),
+        ggplot(cts, aes(x=log2(SRR7624365), y=log2(SRR7624366))) + 
+        geom_point() + 
+        xlab('0h rep 1 log2(abundance)') + 
+        ylab('0h rep 2 log2(abundance'),nrow=1,top='0h rep vs rep')
+
+grid.arrange(ggplot(cts, aes(x=SRR7624371, y=SRR7624372)) + 
+        geom_point() + 
+        xlab('12h rep 1 abundance') + 
+        ylab('12h rep 2 abundance'),
+        ggplot(cts, aes(x=log2(SRR7624371), y=log2(SRR7624372))) + 
+        geom_point() + 
+        xlab('12h rep 1 log2(abundance)') + 
+        ylab('12h rep 2 log2(abundance'),nrow=1,top='12h rep vs rep')
+```
+
+### MA plots
+
+```{r}
+ma.plot = function(counts, meta, i, j, lower.lim=NA, upper.lim=NA, log.transformed=FALSE){
+  main.title = paste0(meta$id[i], ' v ', meta$id[j])
+  sub.title = paste(meta$timepoint[i], meta$rep[i], 'v',
+                    meta$timepoint[j], meta$rep[j])
+  
+  # if already log transformed we don't need to do it again
+  if (log.transformed == TRUE){
+    l1 = counts[,i]
+    l2 = counts[,j]
+  } else {
+    # mask away the zeros
+    zero.mask = !(counts[,i] == 0 | counts[,j] == 0)
+    l1 = log2(counts[zero.mask, i])
+    l2 = log2(counts[zero.mask, j])
+  }
+  
+  #calculate M and A
+  m = l1 - l2
+  a = 0.5 * (l1 + l2)
+  data = data.frame(A = a, M = m)
+  
+  #define MA plot
+  p = ggplot(data=data, aes(x=A, y=M, color='red', fill='red')) +
+    geom_point(alpha=0.05)+
+    theme(legend.position = "none") + 
+    geom_hline(yintercept=0.5,colour='gray60')+
+    geom_hline(yintercept=-0.5,colour='gray60')+
+    geom_hline(yintercept=1,colour='gray60')+
+    geom_hline(yintercept=-1,colour='gray60')
+  #define boxplot version
+  a.binned = cut(a, 20)
+  data.binned = data.frame(A = a.binned, M = m)
+  q = ggplot(data=data.binned) +
+    geom_boxplot(aes(A, M)) +
+    theme(axis.text.x=element_text(angle=90))+
+    theme(legend.position = "none")  + 
+    geom_hline(yintercept=0.5,colour='gray60')+
+    geom_hline(yintercept=-0.5,colour='gray60')+
+    geom_hline(yintercept=1,colour='gray60')+
+    geom_hline(yintercept=-1,colour='gray60')
+  
+  # add ylim if defined
+  if (!is.na(lower.lim) | !is.na(upper.lim)){
+    p = p + ylim(lower.lim, upper.lim)
+    q = q + ylim(lower.lim, upper.lim)
+  }
+  grid.arrange(p, q, ncol = 2, top=paste0(main.title, '\n', sub.title))
+}
+```
+
+```{r,fig.height=4,warning=FALSE}
+#make MA plots for the pairs of reps
+llim = -5
+ulim = 5
+for (i in 1:2){
+  ma.plot(cts, meta, (2*i)-1, 2*i, llim, ulim)
+  }
+
+```
+
+### PCA
+```{r}
+plot.pca = function(pca.results, meta.table, title){
+  data = data.frame(PC1=pca.results$x[,1], PC2=pca.results$x[,2])
+  data = cbind(data, meta.table)
+  eigs = pca.results$sdev ** 2
+  eigs = eigs / sum(eigs)
+  xlab = paste0('PC1 (', format(eigs[1]*100, digits=3), '% of variance)')
+  ylab = paste0('PC2 (', format(eigs[2]*100, digits=3), '% of variance)')
+  ggplot(data=data, aes(x=PC1, y=PC2, color=timepoint)) +
+    geom_text_repel(data=data, aes(x=PC1, y=PC2, label=id), size=3) +
+    geom_point(alpha=0.6) +
+    labs(title=title, x=xlab, y=ylab)
+}
+```
+
+```{r}
+#calculate PCA
+pca.norm = prcomp(t(cts))
+#plot PCA
+print(plot.pca(pca.norm, meta,'PCA, unnormalised, unfiltered'))
+```
+
+### Incremental PCAs
+
+```{r}
+#PCA with increasing abundance threshold (50,100,300,500,....,1900)
+incremental.pca <- function(cts,meta){
+  i=50
+  expression.threshold = i
+  keep.features = apply(cts, 1, max)>expression.threshold ##get genes with at least one sample above threshold
+  cts.filtered = cts[keep.features==TRUE,]
+  
+  cts.filtered[cts.filtered<expression.threshold]=expression.threshold ##increase all below threshold to threshold
+  pca.norm = prcomp(t(cts.filtered))
+  print(plot.pca(pca.norm, meta, paste('PCA, unnormalised , abundance > ',i,sep='')))
+  for (i in seq(100,2000,200)){
+    expression.threshold = i
+    keep.features = apply(cts, 1, max)>expression.threshold
+    print(length(keep.features[keep.features==TRUE]))
+    if (length(keep.features[keep.features==TRUE])!=0){
+      cts.filtered = cts[keep.features==TRUE,]
+      pca.norm = prcomp(t(cts.filtered))
+      print(plot.pca(pca.norm, meta, paste('PCA, unnormalised, abundance > ',i,sep='')))
+    }
+  }
+}
+incremental.pca(cts,meta)
+```
+
+### Jaccard similarity index
+
+```{r}
+#calculate JSI for 2 sets
+jaccard.index = function(a, b){
+  if ((length(a) == 0) & (length(b) == 0)){
+    return(1)
+  } else{
+    u = length(union(a,b))
+    i = length(intersect(a,b))
+    return(i/u)
+  }
+}
+
+jaccard.heatmap = function(counts, n.abundant, labels,meta){
+  colnames_counts <- paste(meta$timepoint, meta$rep, sep = "_")
+  labels=labels[order(colnames_counts)]
+  counts=counts[,order(colnames_counts)]
+  n.samples = ncol(counts)
+  hm = matrix(nrow=n.samples, ncol=n.samples)
+  hm[] = 0
+  #calculate JSI for each pair
+  for (i in 1:n.samples){
+    for (j in 1:i){
+      i.gene.indices = order(counts[,i], decreasing=TRUE)[1:n.abundant]
+      j.gene.indices = order(counts[,j], decreasing=TRUE)[1:n.abundant]
+      
+      hm[i, j] = jaccard.index(i.gene.indices, j.gene.indices)
+      hm[j, i] = hm[i, j]
+    }
+  }
+  title = paste0('Jaccard index of ', n.abundant, ' most abundant genes')
+  #plot heatmap
+  aheatmap(hm, color='Greys', Rowv = NA, Colv = NA, labRow=labels, labCol=labels, main=title,breaks=seq(0.5,1,0.05),treeheight=0)
+}
+```
+
+```{r}
+leaf.labels=paste(meta$timepoint, meta$rep,sep='_')
+
+#create JSI heatmap for top 50,100,200,500,1000 and 2000 genes
+n.abundances = c(2000, 1000, 500, 200, 100, 50)
+for (n in n.abundances){
+  jaccard.heatmap(cts, n, leaf.labels,meta)
+}
+```
+
+## Noise filtering, normalisation and differential expression
+
+### Noise filtering with a fixed threshold
+
+```{r}
+#pre-filtering distribution
+print(summary(cts))
+expression.threshold <- 20
+cts.filtered <- cts
+cts.filtered[cts.filtered<expression.threshold]<-expression.threshold
+cts.filtered = cts.filtered[rowSums(cts.filtered)>expression.threshold*ncol(cts.filtered),]
+#post-filtering distribution
+print(summary(cts.filtered))
+```
+
+You can instead use noisyr, either the count or transcript version, for the noise filtering (see Ilias's section).
+
+### Quantile normalisation and edgeR DE
+
+*Quantile normalisation*
+
+```{r}
+#filtering
+expression.threshold <- 20
+cts.filtered <- cts
+cts.filtered[cts.filtered<expression.threshold]<-expression.threshold
+cts.filtered = cts.filtered[rowSums(cts.filtered)>expression.threshold*ncol(cts.filtered),]
+#quantile normalise
+cts.filtered.qnorm=data.frame(normalize.quantiles(as.matrix(cts.filtered)),row.names=rownames(cts.filtered))
+colnames(cts.filtered.qnorm)=colnames(cts.filtered)
+#post-normalisation summary
+summary(cts.filtered.qnorm)
+```
+
+*QC plots on quantile normalised data*
+
+```{r}
+#density plots
+qc.plots(cts.filtered.qnorm,title = 'Filtered to s/n 20 and quantile normalised')
+#PCA
+pca.norm = prcomp(t(cts.filtered.qnorm))
+print(plot.pca(pca.norm, meta,'PCA, quantile normalised, filtered to s/n 20'))
+#MA
+llim = -5
+ulim = 5
+for (i in 1:2){
+  ma.plot(cts.filtered.qnorm, meta, (2*i)-1, 2*i, llim, ulim)
+  }
+```
+
+*DE on quantile normalised data*
+
+```{r}
+contrast=c(-1, 1)
+design <- model.matrix(~ 0 + meta$timepoint)
+edger <- DGEList(counts = cts.filtered.qnorm)
+edger <- estimateDisp(edger, design)
+edger.fit <- glmFit(edger, design)
+edger.lrt <- glmLRT(edger.fit, contrast=contrast)
+edger.table=edger.lrt$table
+edger.table$adjusted.PValue=p.adjust(edger.table$PValue,method = 'BH')
+
+#take list of DE genes for later
+qnorm.edger.de = rownames(edger.table[abs(edger.table$logFC)>0.5&edger.table$adjusted.PValue<0.05,])
+print(length(qnorm.edger.de))
+```
+
+*Visualising differential expression*
+
+```{r}
+#Defining the function for volcano plots with edgeR output
+volcano.plot.edger = function(detable, pval.threshold=0.05, lfc.threshold=0.5,
+                        log10pval.cap=TRUE # caps x-axis at 10 if true
+                        )
+{
+  # take log fold change, log10 (adjusted p-value) and log2 expression from detable
+  df <- data.frame(log2FC = detable$logFC, 
+                   log10pval = log10(detable$adjusted.PValue), 
+                   log2.expression = detable$logCPM)
+
+  #cap values above 10 -log10pval if param is set
+  df = subset(df, !is.na(log10pval))
+  if(all(df$log10pval >= -10)){log10pval.cap <- FALSE}
+  if(log10pval.cap){
+    df$log10pval[df$log10pval < -10] = -10
+  }
+  
+  # take maximum absolute logFC for finite pvals to set as +- x limits
+  max.abs.lfc = max(abs(df[df$log10pval > -Inf,]$log2FC))
+  
+  # set aside the differentially expressed entries using defined thresholds
+  logp.threshold = log10(pval.threshold)
+  df.de = subset(df, abs(log2FC)>lfc.threshold & log10pval<logp.threshold)
+  df.de=df.de[order(df.de$log2.expression),]
+  
+  # colour genes by whether they above or below logFC and pval threshold
+  colours = vector(length=nrow(df))
+  colours[] = '#bfbfbf'
+  colours[abs(df$log2FC) > lfc.threshold] = 'orange'
+  colours[df$log10pval < logp.threshold] = 'red'
+  colours[abs(df$log2FC) > lfc.threshold & df$log10pval < logp.threshold] = 'green'
+  df$colours <- colours
+  
+  #define the actual plot
+  volcano.plot <- ggplot() +
+    geom_point(data=df, aes(x=log2FC, y=-log10pval), alpha=0.1, colour=colours) +
+    xlim(-max.abs.lfc, max.abs.lfc) +
+    geom_point(data=df.de, aes(x=log2FC, y=-log10pval, colour=log2.expression)) +
+    scale_color_gradient(low='#99e6ff', high='#000066') +
+    geom_vline(xintercept=lfc.threshold, colour="green") +
+    geom_vline(xintercept=-lfc.threshold, colour="green") +
+    geom_vline(xintercept=2*lfc.threshold, colour="blue") +
+    geom_vline(xintercept=-2*lfc.threshold, colour="blue") +
+    geom_hline(yintercept=-logp.threshold, colour="green") +
+    geom_hline(yintercept=-2*logp.threshold, colour="blue")
+  
+  if(log10pval.cap){
+    volcano.plot <- volcano.plot +
+      scale_y_continuous(labels=c("0.0", "2.5", "5.0", "7.5", ">10"))
+  }
+  
+  return(volcano.plot)
+}
+```
+
+```{r}
+volcano.plot.edger(detable = edger.table,pval.threshold = 0.05,lfc.threshold = 0.5)
+```
+
+### TMM normalisation with edgeR
+
+```{r}
+expression.threshold <- 20
+cts.filtered <- cts
+cts.filtered[cts.filtered<expression.threshold]<-expression.threshold
+cts.filtered = cts.filtered[rowSums(cts.filtered)>expression.threshold*ncol(cts.filtered),]
+
+contrast=c(-1, 1)
+design <- model.matrix(~ 0 + meta$timepoint)
+cts.filtered.tmm = DGEList(counts = cts.filtered)
+#this is the normalisation line
+cts.filtered.tmm = calcNormFactors(cts.filtered.tmm,method = 'TMM')
+cts.filtered.tmm <- estimateDisp(cts.filtered.tmm, design)
+cts.filtered.tmm.fit <- glmFit(cts.filtered.tmm, design)
+cts.filtered.tmm.lrt <- glmLRT(cts.filtered.tmm.fit, contrast=contrast)
+cts.filtered.tmm.table <- cts.filtered.tmm.lrt$table
+cts.filtered.tmm.table$adjusted.PValue=p.adjust(cts.filtered.tmm.table$PValue,method = 'BH')
+TMM.edger.de = rownames(cts.filtered.tmm.table[abs(cts.filtered.tmm.table$logFC)>0.5&cts.filtered.tmm.table$adjusted.PValue<0.05,])
+print(length(TMM.edger.de))
+volcano.plot.edger(detable = cts.filtered.tmm.table,pval.threshold = 0.05,lfc.threshold = 0.5)
+```
+
+### DESeq2 normalisation and DE
+
+```{r}
+expression.threshold <- 20
+cts.filtered <- cts
+cts.filtered[cts.filtered<expression.threshold]<-expression.threshold
+cts.filtered = cts.filtered[rowSums(cts.filtered)>expression.threshold*ncol(cts.filtered),]
+
+dds <- DESeqDataSetFromMatrix(countData = cts.filtered,
+                              colData = meta,
+                              design = ~ timepoint)
+dds <- estimateSizeFactors(dds)
+dds <- DESeq(dds)
+res <- results(dds,lfcThreshold = 0.5,pAdjustMethod = 'BH',alpha = 0.05)
+res=na.omit(res)
+
+deseq.de=rownames(res[res$padj<0.05&abs(res$log2FoldChange)>0.5,])
+print(length(deseq.de))
+```
+
+*Visualising differentially expressed genes with DESeq2*
+
+```{r}
+volcano.plot.deseq = function(res, pval.threshold=0.05, lfc.threshold=0.5,
+                        log10pval.cap=TRUE # caps x-axis at 10 if true
+                        )
+{
+  # take log fold change, log10 (adjusted p-value) and log2 expression from detable
+  df <- data.frame(log2FC = res$log2FoldChange, 
+                   log10pval = log10(res$padj), 
+                   log2.expression = log2(res$baseMean))
+
+  #cap values above 10 -log10pval if param is set
+  df = subset(df, !is.na(log10pval))
+  if(all(df$log10pval >= -10)){log10pval.cap <- FALSE}
+  if(log10pval.cap){
+    df$log10pval[df$log10pval < -10] = -10
+  }
+  
+  # take maximum absolute logFC for finite pvals to set as +- x limits
+  max.abs.lfc = max(abs(df[df$log10pval > -Inf,]$log2FC))
+  
+  # set aside the differentially expressed entries using defined thresholds
+  logp.threshold = log10(pval.threshold)
+  df.de = subset(df, abs(log2FC)>lfc.threshold & log10pval<logp.threshold)
+  df.de=df.de[order(df.de$log2.expression),]
+  
+  # colour genes by whether they above or below logFC and pval threshold
+  colours = vector(length=nrow(df))
+  colours[] = '#bfbfbf'
+  colours[abs(df$log2FC) > lfc.threshold] = 'orange'
+  colours[df$log10pval < logp.threshold] = 'red'
+  colours[abs(df$log2FC) > lfc.threshold & df$log10pval < logp.threshold] = 'green'
+  df$colours <- colours
+  
+  #define the actual plot
+  volcano.plot <- ggplot() +
+    geom_point(data=df, aes(x=log2FC, y=-log10pval), alpha=0.1, colour=colours) +
+    xlim(-max.abs.lfc, max.abs.lfc) +
+    geom_point(data=df.de, aes(x=log2FC, y=-log10pval, colour=log2.expression)) +
+    scale_color_gradient(low='#99e6ff', high='#000066') +
+    geom_vline(xintercept=lfc.threshold, colour="green") +
+    geom_vline(xintercept=-lfc.threshold, colour="green") +
+    geom_vline(xintercept=2*lfc.threshold, colour="blue") +
+    geom_vline(xintercept=-2*lfc.threshold, colour="blue") +
+    geom_hline(yintercept=-logp.threshold, colour="green") +
+    geom_hline(yintercept=-2*logp.threshold, colour="blue")
+  
+  if(log10pval.cap){
+    volcano.plot <- volcano.plot +
+      scale_y_continuous(labels=c("0.0", "2.5", "5.0", "7.5", ">10"))
+  }
+  
+  return(volcano.plot)
+}
+```
+
+```{r}
+volcano.plot.deseq(res,pval.threshold = 0.05,lfc.threshold = 0.5)
+```
+
+## Comparing sets of differentially expressed genes
+
+*Compare the MA plots*
+
+```{r}
+qnorm.table.de=edger.table[qnorm.edger.de,]
+ggplot()+
+  geom_point(data=edger.table,aes(x=logCPM,y=logFC),color='gray')+
+  geom_point(data=qnorm.table.de,aes(x=logCPM,y=logFC),color='red')+
+  ggtitle('Quantile normalised + edgeR')
+
+
+tmm.table.de=cts.filtered.tmm.table[TMM.edger.de,]
+ggplot()+
+  geom_point(data=cts.filtered.tmm.table,aes(x=logCPM,y=logFC),color='gray')+
+  geom_point(data=tmm.table.de,aes(x=logCPM,y=logFC),color='red')+
+  ggtitle('TMM normalised + edgeR')
+
+deseq.table.de=res[deseq.de,]
+ggplot()+
+  geom_point(data=as.data.frame(res),aes(x=log2(baseMean),y=log2FoldChange),color='gray')+
+  geom_point(data=as.data.frame(deseq.table.de),aes(x=log2(baseMean),y=log2FoldChange),color='red')+
+  ggtitle('DESeq2')
+
+```
+
+*Intersection sizes for sets of DE genes*
+
+```{r}
+list.of.degenes=list("qnorm_edgeR" = qnorm.edger.de,
+                     "TMM_edgeR" = TMM.edger.de,
+                     "DESeq2"=deseq.de)
+
+upset(fromList(list.of.degenes))
+```
+
+## Enrichment
+
+```{r}
+gprofiler_results = gprofiler2::gost(Reduce(intersect, list.of.degenes),
+                                     organism='mmusculus',
+                                     custom_bg = rownames(cts.filtered),
+                                     sources=c('GO:BP','GO:MF','GO:CC','KEGG','REAC','TF','MIRNA'),
+                                     correction_method='fdr')
+gostplot(gprofiler_results, capped = TRUE, interactive = FALSE)
+print(head(gprofiler_results$result))
+
+```
