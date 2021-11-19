@@ -1,0 +1,137 @@
+---
+title: "Cuomo 2020 4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load libraries, message=FALSE,warning=FALSE}
+library(caret)
+library(ggplot2); theme_set(theme_bw())
+library(UpSetR)
+library(GGally)
+library(rpart.plot)
+library(Rtsne)
+library(dplyr)
+library(randomForest)
+```
+
+## Loading data
+
+```{r loading data}
+cuomo = read.csv('Cuomo2020_ML.csv',row.names = 1)
+cuomoData = cuomo[,colnames(cuomo)[colnames(cuomo)!='classification']]
+cuomoClass = cuomo$classification
+```
+
+### Remove highly correlated and near-zero variance variables
+
+
+```{r correlation nzv}
+corMat <- cor(cuomoData)
+highCorr <- findCorrelation(corMat, cutoff=0.5)
+highly.correlated = names(cuomoData)[highCorr]
+nzv <- nearZeroVar(cuomoData, saveMetrics=T)
+near.zero.variance = rownames(nzv[nzv$nzv==TRUE | nzv$zeroVar==TRUE,])
+features.to.exclude = unique(c(highly.correlated,near.zero.variance))
+cuomoData = cuomoData[,!(colnames(cuomoData)%in%features.to.exclude)]
+```
+
+### Split into training and test
+
+Remove bad variables (highly correlated and zero/near zero variance) and split into 70% training and 30% test.
+
+```{r exclude bad features}
+set.seed(42)
+trainIndex <- createDataPartition(y=cuomoClass, times=1, p=0.7, list=F)
+classTrain <- as.factor(cuomoClass[trainIndex])
+dataTrain <- cuomoData[trainIndex,]
+classTest <- as.factor(cuomoClass[-trainIndex])
+dataTest <- cuomoData[-trainIndex,]
+```
+
+### Set up cross-validation
+
+Set up 10-fold cross-validation and set seeds for all classification
+
+```{r set seeds and train control}
+set.seed(42)
+seeds <- vector(mode = "list", length = 101)
+for(i in 1:100) seeds[[i]] <- sample.int(1000, 75) ##75 here
+seeds[[101]] <- sample.int(1000,1)
+
+train_ctrl <- trainControl(method="repeatedcv",
+                           repeats = 10,
+                           number = 10,
+                           preProcOptions=list(cutoff=0.75),
+                           seeds = seeds)
+```
+
+```{r kNN}
+tuneParam <- data.frame(k=seq(1,50,2))
+knnFit <- train(dataTrain, classTrain,
+                method="knn",
+                preProcess = c("center", "scale"),
+                tuneGrid=tuneParam,
+                trControl=train_ctrl)
+knnFeat = varImp(knnFit)$importance
+knnFeatures = head(rownames(knnFeat[order(-rowSums(knnFeat)),]),10)
+print(knnFeatures)
+```
+
+```{r dtree}
+dtFit <- train(dataTrain, classTrain,
+               method="rpart",
+               tuneLength=10,
+               trControl=train_ctrl)
+dtFeat = varImp(dtFit)$importance
+dtFeat$gene = rownames(dtFeat)
+dtFeatures = head(dtFeat[order(-dtFeat$Overall),]$gene,10)
+print(dtFeatures)
+```
+
+```{r rf}
+rfFit <- train(dataTrain, classTrain,
+               method="rf",
+               preProcess = c("center", "scale"),
+               tuneLength=10,
+               trControl=train_ctrl)
+rfFeat = varImp(rfFit)$importance
+rfFeat$gene = rownames(rfFeat)
+rfFeatures = head(rfFeat[order(-rfFeat$Overall),]$gene,10)
+print(rfFeatures)
+```
+
+```{r}
+R_models <- train(dataTrain, classTrain,
+                  method="svmRadial",
+                  preProcess = c("center", "scale"),
+                  tuneLength=5,
+                  trControl=train_ctrl)
+svmFeat = varImp(R_models)$importance
+svmFeatures = head(rownames(svmFeat[order(-rowSums(svmFeat)),]),10)
+print(svmFeatures)
+```
+
+## Conclusions
+
+We can compare the accuracy of all the models as well as the features chosen.
+
+```{r compare models}
+resamps <- resamples(list(kNN = knnFit, Dtree = dtFit, RF = rfFit, SVM_radial = R_models))
+summary(resamps)
+resamps.df = as.data.frame(resamps)
+resamps.df.melt = reshape2::melt(resamps.df,id_vars=c('Resample'))
+ggplot(resamps.df.melt,aes(x=variable,y=value,color=variable))+geom_boxplot()
+ggplot(resamps.df.melt,aes(x=value,y=..density..,color=variable))+geom_density()
+```
+
+```{r compare features}
+feature.list = list('kNN'=knnFeatures,'dtree'=dtFeatures,'rf'=rfFeatures,'svm'=svmFeatures)
+print(upset(fromList(feature.list)))
+print(intersect(knnFeatures,intersect(dtFeatures,intersect(rfFeatures,svmFeatures))))
+```
+

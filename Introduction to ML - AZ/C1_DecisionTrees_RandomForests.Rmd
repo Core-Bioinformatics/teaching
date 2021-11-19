@@ -1,0 +1,661 @@
+---
+title: "Decision Trees and Random Forests"
+output: html_document
+---
+
+<!-- Sudhakaran -->
+## Decision Trees
+
+**What is a Decision Tree?**
+
+Decision tree or recursive partitioning is a supervised graph based algorithm to represent choices and the results of the choices in the form of a tree. 
+
+The nodes in the graph represent an event or choice and it is referred to as a **leaf** and the set of *decisions* made at the node is reffered to as **branches**. 
+
+Decision trees map non-linear relationships and the hierarchical leaves and branches makes a **Tree**. 
+
+It is one of the most widely used tool in ML for predictive analytics. Examples of use of decision tress are − predicting an email as spam or not spam, predicting whether a tumor is cancerous or not.
+
+```{r echo = F, fig.cap = 'Decision Tree', fig.align = 'center', fig.show='hold', out.width = '55%'}
+knitr::include_graphics(c("images/decision_tree.png"))
+```
+
+*Image source: analyticsvidhya.com*
+
+**How does it work?**
+
+A model is first created with training data and then a set of validation data is used to verify and improve the model. R has many packages, such as ctree, rpart, tree, and so on, which are used to create and visualize decision trees. 
+
+```{r echo = F, fig.cap = 'Example of a decision Tree', fig.align = 'center', fig.show='hold', out.width = '90%'}
+knitr::include_graphics(c("images/decision_tree_2.png"))
+```
+
+*Image source: analyticsvidhya.com* 
+
+**Example of a decision tree**\
+In this problem (Figure 6.2), we need to segregate students who play cricket in their leisure time based on highly significant input variable among all three.
+
+The decision tree algorithm will initially segregate the students based on **all values** of three variable (Gender, Class, and Height) and identify the variable, which creates the best homogeneous sets of students (which are heterogeneous to each other).
+
+In the snapshot above, you can see that variable Gender is able to identify best homogeneous sets compared to the other two variables.
+
+There are a number of decision tree algorithms. We have to choose them based on our dataset. If the dependent variable is categorical, then we have to use a *categorical variable decision tree*. If the dependent variable is continuous, then we have to use a *continuous variable decision tree*. 
+
+The above example is of the categorical variable decision tree type. 
+
+**Some simple R code for a decision tree looks like this:**
+
+<!-- this chunk will not run because we have not defined any data-->
+
+```{r, eval=FALSE}
+library(rpart)
+x <- cbind(x_train,y_train) ##y_train – represents dependent variable, x_train – represents independent variable
+# grow tree 
+fit <- rpart(y_train ~ ., data = x,method="class") ##x – represents training data
+summary(fit)
+#Predict Output 
+predicted= predict(fit,x_test)
+```
+
+**Terminology related to decision trees**
+
+*Root nodule*: the entire population that can get further divided into homogeneous sets
+
+*Splitting*: process of diving a node into two or more sub-nodes
+
+*Decision node*: When a sub-node splits into further sub-nodes
+
+*Leaf or terminal node*: when a node does not split further it is called a terminal node. 
+
+*Pruning*: A loose stopping crieteria is used to contruct the tree and then the tree is cut back by removing branches that do not contribute to the generalisation accuracy. 
+
+*Branch*: a sub-section of an entire tree
+
+**How does a tree decide where to split?**
+
+The classification tree searches through each dependent variable to find a single variable that splits the data into two or more groups and this process is repeated until the stopping criteria is invoked. 
+
+The decision of making strategic splits heavily affects a tree’s accuracy. The decision criteria is different for classification and regression trees.
+
+Decision trees use multiple algorithms to decide to split a node in two or more sub-nodes. The common goal for these algorithms is the creation of sub-nodes with increased homogeneity. In other words, we can say that purity of the node increases with respect to the target variable. Decision tree splits the nodes on all available variables and then selects the split which results in most homogeneous sub-nodes.
+
+**Commonly used algorithms to decide where to split**
+
+**Gini Index**\
+If we select two items from a population at random then they must be of same class and the probability for this is 1 if population is pure.
+
+a. It works with categorical target variable “Success” or “Failure”.\
+b. It performs only Binary splits\
+c. Higher the value of Gini higher the homogeneity.\
+d. CART (Classification and Regression Tree) uses Gini method to create binary splits.
+
+Step 1: Calculate Gini for sub-nodes, using formula sum of square of probability for success and failure \ $$p^2+q^2$$.
+Step 2: Calculate Gini for split using weighted Gini score of each node of that split.
+
+**Chi-Square**\
+It is an algorithm to find out the statistical significance between the differences between sub-nodes and parent node. We measure it by sum of squares of standardized differences between observed and expected frequencies of target variable.
+
+a. It works with categorical target variable “Success” or “Failure”.
+b. It can perform two or more splits.
+c. Higher the value of Chi-Square higher the statistical significance of differences between sub-node and Parent node.
+d. Chi-Square of each node is calculated using formula,
+Chi-square = $$\sum(Actual – Expected)^2 / Expected$$
+
+Steps to Calculate Chi-square for a split:
+
+1. Calculate Chi-square for individual node by calculating the deviation for Success and Failure both
+2. Calculated Chi-square of Split using Sum of all Chi-square of success and Failure of each node of the split
+
+**Information Gain**\
+The more homogeneous something is the less information is needed to describe it and hence it has gained information. Information theory has a measure to define this degree of disorganization in a system and it is known as Entropy. If a sample is completely homogeneous, then the entropy is zero and if it is equally divided (50% – 50%), it has entropy of one.
+
+Entropy can be calculated using formula
+$$Entropy = -plog_2p - qlog_2q$$
+
+Where p and q are probability of success and failure
+
+**Reduction in Variance**
+
+Reduction in variance is an algorithm used for continuous target variables (regression problems). This algorithm uses the standard formula of variance to choose the best split. The split with lower variance is selected as the criteria to split the population:
+
+**Advantages of decision tree**
+
+1. Simple to understand and use\
+2. Algorithms are robust to noisy data\
+3. Useful in data exploration\
+4. decision tree is 'non parametric' in nature i.e. does not have any assumptions about the distribution of the variables
+
+**Disadvantages of decision tree** 
+
+1.Overfitting is the common disadvantage of decision trees. It is taken care of partially by constraining the model parameter and by pruning.\
+2. It is not ideal for continuous variables as in it looses information
+
+*Some parameters used to defining a tree and constrain overfitting*
+
+1. Minimum sample for a node split\
+2. Minimum sample for a terminal node\
+3. Maximum depth of a tree\
+4. Maximum number of terminal nodes\
+5. Maximum features considered for split
+
+*Acknowledgement: some aspects of this explanation can be read from www.analyticsvidhya.com*
+
+## Example code with categorical data
+
+We are going to plot a car evaluation data with 7 attributes, 6 as feature attributes and 1 as the target attribute. This is to evaluate what kinds of cars people purchase. All the attributes are categorical. We will try to build a classifier for predicting the Class attribute. The index of target attribute is 7th. For more information about this dataset, see https://archive.ics.uci.edu/ml/datasets/car+evaluation
+
+### Loading packages and data
+
+R package *caret* helps to perform various machine learning tasks including decision tree classification. The *rplot.plot* package will help to get a visual plot of the decision tree.
+
+```{r loading packages and car data}
+library(caret)
+library(rpart.plot)
+#download.file(url = "https://archive.ics.uci.edu/ml/machine-learning-databases/car/car.data",
+#              destfile = "data/car.data")
+car.data <- read.csv("data/car.data", sep = ',', header = FALSE)
+colnames(car.data)=c('buying','maint','doors','persons','lug_boot','safety','class')
+```
+
+```{r summarising car data}
+str(car.data) 
+head(car.data)
+```
+
+The output of this will show us that our dataset consists of 1728 observations each with 7 attributes and that all the features are categorical, so normalization of data is not needed.
+
+### Data Slicing
+
+Data slicing is a step to split data into train and test set. Training data set can be used specifically for our model building. Test dataset should not be mixed up while building model. Even during standardization, we should not standardize our test set.
+
+```{r split car data into training and test}
+set.seed(42)
+trainTestPartition <- createDataPartition(y = car.data$class, p= 0.7, list = FALSE)
+car.training <- car.data[trainTestPartition,]
+car.testing <- car.data[-trainTestPartition,]
+```
+
+The “p” parameter holds a decimal value in the range of 0-1. It’s to show that percentage of the split. We are using p=0.7. It means that data split should be done in 70:30 ratio.
+
+### Data Preprocessing
+
+First, check the dimensions of the data.
+
+```{r dim car data}
+dim(car.training); dim(car.testing);
+```
+
+Next, check for missing data.
+
+```{r test NA car data}
+anyNA(car.data)
+```
+
+Make sure none of the variables are zero or near-zero variance.
+
+```{r test nzv car data}
+nzv(car.data)
+```
+
+### Training Decisions Trees
+
+
+```{r set up trctrl}
+set.seed(42)
+seeds = vector(mode='list',length=101)
+for (i in 1:100) seeds[[i]] = sample.int(1000,100)
+seeds[[101]] = sample.int(1000,1)
+
+trctrl <- trainControl(method = "repeatedcv", 
+                       number = 10, 
+                       repeats = 10,
+                       seeds = seeds)
+```
+
+Training the Decision Tree classifier with criterion as GINI INDEX
+
+```{r decision tree gini}
+dtree_fit <- train(class ~., data = car.training, method = "rpart",
+                   parms = list(split = "gini"),
+                   trControl=trctrl,
+                   tuneLength = 10)
+dtree_fit
+```
+Training the Decision Tree classifier with criterion as INFORMATION GAIN
+
+```{r decision tree information}
+
+dtree_fit_information <- train(class ~., data = car.training, method = "rpart",
+                               parms = list(split = "information"),
+                               trControl=trctrl,
+                               tuneLength = 10)
+dtree_fit_information
+```
+
+In both cases, the same cp value is chosen but we see different accuracy and kappa values.
+
+### Plotting the decision trees
+
+```{r plot tree dtree cars}
+prp(dtree_fit$finalModel, box.palette = "Reds", tweak = 1.2) ##Gini tree
+prp(dtree_fit_information$finalModel, box.palette = "Blues", tweak = 1.2) ##Information tree
+```
+
+We also see different trees from the two *split* parameters.
+
+### Prediction
+
+The model is trained with cp = 0.006868132. cp is the complexity parameter for our dtree. We are ready to predict classes for our test set. We can use predict() method. Let’s try to predict target variable for test set’s 1st record.
+
+```{r predicting 1 record}
+car.testing[1,]
+predict(dtree_fit, newdata = car.testing[1,])
+predict(dtree_fit_information, newdata = car.testing[1,])
+
+```
+
+In both models, the 1st record is predicted as unacc. Now, we predict target variable for the whole test set.
+
+```{r test prediction cars dtree}
+test_pred <- predict(dtree_fit, newdata = car.testing)
+confusionMatrix(test_pred, as.factor(car.testing$class) )
+test_pred_information <- predict(dtree_fit_information, newdata = car.testing)
+confusionMatrix(test_pred_information, as.factor(car.testing$class) )
+```
+
+Although the 1st record was predicted the same in the Gini and information versions of the decision tree model, we see differences across the testing set.
+
+### Implementing Decision Trees directly
+
+Both *rpart* and *C.50* are widely-used packages for Decision Trees. If you want to use the packages directly then you can implement them like this:
+
+**rpart**
+
+```{r rpart direct gini}
+rpart_dtree=rpart(class~.,
+                  car.training,
+                  parms = list(split="gini"),
+                  cp=0.006868132)
+prp(rpart_dtree,box.palette = 'Reds',tweak=1.2)
+rpart_test_pred <- predict(rpart_dtree, newdata = car.testing,type = 'class')
+confusionMatrix(rpart_test_pred, as.factor(car.testing$class) )
+```
+
+```{r rpart direct information}
+rpart_dtree_information=rpart(class~.,
+                              car.training,
+                              parms = list(split="information"),
+                              cp=0.005494505)
+prp(rpart_dtree_information,box.palette = 'Blues',tweak=1.2)
+rpart_test_pred_information <- predict(rpart_dtree_information, newdata = car.testing,type = 'class')
+confusionMatrix(rpart_test_pred_information, as.factor(car.testing$class) )
+```
+
+**C.50**
+
+```{r c50 train}
+library(C50)
+car.training.factors= as.data.frame(lapply(car.training,as.factor))
+car.testing.factors= as.data.frame(lapply(car.testing,as.factor))
+c50_dtree <- C5.0(x = car.training.factors[, 1:6], y = car.training.factors$class)
+summary(c50_dtree)
+```
+
+```{r c50 test}
+c50_test_pred <- predict(c50_dtree, newdata = car.testing.factors,type = 'class')
+confusionMatrix(c50_test_pred, as.factor(car.testing.factors$class) )
+```
+
+### Iris example for Decision Trees
+
+We can use the same pipeline for the Iris dataset but we need to remember to scale, centre and check for highly correlation variables and skewness because now we have numeric predictors.
+
+```{r load iris rf}
+library(datasets)
+data(iris) ##loads the dataset, which can be accessed under the variable name iris
+?iris ##opens the documentation for the dataset
+summary(iris) ##presents the 5 figure summary of the dataset
+str(iris) ##presents the structure of the iris dataframe
+```
+
+```{r iris split training test}
+set.seed(42)
+trainTestPartition<-createDataPartition(y=iris$Species, #the class label, caret ensures an even split of classes
+                                        p=0.7, #proportion of samples assigned to train
+                                        list=FALSE)
+str(trainTestPartition)
+
+iris.training <- iris[ trainTestPartition,] #take the corresponding rows for training
+iris.testing  <- iris[-trainTestPartition,] #take the corresponding rows for testing by removing training rows
+```
+
+```{r train gini dtree iris}
+set.seed(42)
+seeds = vector(mode='list',length=101) #you need length #folds*#repeats + 1 so 10*10 + 1 here
+for (i in 1:100) seeds[[i]] = sample.int(1000,10)
+seeds[[101]] = sample.int(1000,1)
+
+train_ctrl_seed_repeated = trainControl(method='repeatedcv',
+                              number=10, #number of folds
+                              repeats=10, #number of times to repeat cross-validation
+                              seeds=seeds)
+iris_dtree <- train(
+                  Species ~ .,
+                  data = iris.training,
+                  method = "rpart",
+                  parms = list(split = "gini"),
+                  preProc = c("corr","nzv","center", "scale","BoxCox"),
+                  tuneLength=10,
+                  trControl = train_ctrl_seed_repeated
+)
+iris_dtree
+prp(iris_dtree$finalModel,box.palette = 'Reds',tweak=1.2)
+iris_information_predict_train=predict(iris_dtree,iris.training,type='raw')
+confusionMatrix(iris_information_predict_train,iris.training$Species)
+
+iris_gini_predict=predict(iris_dtree,iris.testing,type='raw')
+confusionMatrix(iris_gini_predict,iris.testing$Species)
+```
+
+```{r train information dtree iris}
+iris_dtree_information <- train(
+                          Species ~ .,
+                          data = iris.training,
+                          method = "rpart",
+                          parms = list(split = "information"),
+                          preProc = c("corr","nzv","center", "scale","BoxCox"),
+                          tuneLength=10,
+                          trControl = train_ctrl_seed_repeated
+)
+
+iris_dtree_information
+prp(iris_dtree_information$finalModel,box.palette = 'Blues',tweak=1.2)
+iris_information_predict_train=predict(iris_dtree_information,iris.training,type='raw')
+confusionMatrix(iris_information_predict_train,iris.training$Species)
+
+iris_information_predict=predict(iris_dtree_information,iris.testing,type='raw')
+confusionMatrix(iris_information_predict,iris.testing$Species)
+```
+
+In this case, the output models are the same for the information and gini split parameter choices but this is a very simple model which does not capture the patterns in the data fully.
+
+## Random Forest
+
+**What is a Random Forest?**
+
+It is a kind of ensemble learning method that combines a set of weak models to form a powerful model. In the process it reduces dimensionality, removes outliers, treats missing values, and more importantly it is both a regression and classification machine learning approach. 
+
+**How does it work?**
+
+In Random Forest, multiple trees are grown as opposed to a single tree in a decision tree model. Assume number of cases in the training set is N. Then, sample of these N cases is taken at random but with replacement. This sample will be the training set for growing the tree. Each tree is grown to the largest extent possible and without pruning.
+
+To classify a new object based on attributes, each tree gives a classification i.e. “votes” for that class. The forest chooses the classification having the most votes (over all the trees in the forest) and in case of regression, it takes the average of outputs by different trees.
+
+**Key differences between decision trees and random forest**
+
+Decision trees proceed by searching for a split on every variable in every node random forest searches for a split only on one variable in a node -  the variable that has the largest association with the target among all other explanatory variables but only on a subset of randomly selected explanatory variables that is tested for that node. At every node a new list is selected. 
+
+Therefore, eligible variable set will be different from node to node but the important ones will eventually be "voted in" based on their success in predicting the target variable. 
+
+This random selection of explanatory variables at each node and which are different at each tree is known as bagging. For each tree the ratio between bagging and out of bagging is 60/40. 
+
+The important thing to note is that the trees are themselves not interpreted but they are used to collectively rank the importance of each variable. 
+
+**Example Random Forest code for binary classification**
+
+*Loading randomForest library*
+
+```{r load rf}
+library(randomForest)
+```
+
+We will again use the car data which we used for the Decision Tree example.
+
+```{r load car data rf}
+car.data <- read.csv("data/car.data", sep = ',', header = FALSE)
+colnames(car.data)=c('buying','maint','doors','persons','lug_boot','safety','class')
+set.seed(42)
+trainTestPartition <- createDataPartition(y = car.data$class, p= 0.7, list = FALSE)
+car.training <- car.data[trainTestPartition,]
+car.testing <- car.data[-trainTestPartition,]
+```
+
+Input dataset has 20 independent variables and a target variable. The target variable y is binary.
+
+*Building Random Forest model*
+
+We will build 500 decision trees using randomForest.
+
+```{r ntree rf}
+car.training.factors= as.data.frame(lapply(car.training,as.factor))
+car_rf_direct <- randomForest(class~.,
+                              car.training.factors,
+                              ntree=500,
+                              importance=T)
+error.rates=as.data.frame(car_rf_direct$err.rate)
+error.rates$ntree=as.numeric(rownames(error.rates))
+error.rates.melt=reshape2::melt(error.rates,id.vars=c('ntree'))
+ggplot(error.rates.melt,aes(x=ntree,y=value,color=variable))+geom_line()
+```
+
+500 decision trees or a forest has been built using the Random Forest algorithm based learning. We can plot the error rate across decision trees. The plot seems to indicate that after around 200 decision trees, there is not a significant reduction in error rate.
+
+```{r varimp cars}
+# Variable Importance Plot
+varImpPlot(car_rf_direct,
+           sort = T,
+           main="Variable Importance")
+```
+
+Variable importance plot is also a useful tool and can be plotted using varImpPlot function. The variables plotted based on Model Accuracy and Gini value. We can also get a table with decreasing order of importance based on a measure (1 for model accuracy and 2 node impurity)
+
+```{r importance cars}
+# Variable Importance Table
+importance(car_rf_direct,type=2)
+importance(car_rf_direct,type=1)
+```
+
+We can train a random forest with caret instead of directly using the randomForest package.
+
+```{r rf caret}
+set.seed(42)
+seeds = vector(mode='list',length=101)
+for (i in 1:100) seeds[[i]] = sample.int(1000,100)
+seeds[[101]] = sample.int(1000,1)
+
+trctrl <- trainControl(method = "repeatedcv", 
+                       number = 10, 
+                       repeats = 10,
+                       seeds = seeds)
+
+car_rf_fit <- train(class ~., data = car.training.factors, method = "rf",
+                   trControl=trctrl,
+                   ntree = 10,
+                   tuneLength = 10)
+car_rf_fit
+car_rf_fit$finalModel
+rf_test_pred <- predict(car_rf_fit, newdata = car.testing.factors)
+confusionMatrix(rf_test_pred, car.testing.factors$class )
+```
+This performance here is better than decision trees and is much better balanced across the different classes.
+
+```{r varimp cars caret}
+# Variable Importance Plot
+varImpPlot(car_rf_fit$finalModel,
+           sort = T,
+           main="Variable Importance")
+```
+
+As you can see from the variable importance plot, caret automatically converts categorical variables to dummy variables. This is because it facilitates many types of models, some of which cannot handle categorical variables.
+
+### Iris example for Random Forests
+
+We can use the same pipeline for the Iris dataset but we need to remember to scale, centre and check for highly correlation variables and skewness because now we have numeric predictors.
+
+```{r load iris dtree}
+library(datasets)
+data(iris) ##loads the dataset, which can be accessed under the variable name iris
+?iris ##opens the documentation for the dataset
+summary(iris) ##presents the 5 figure summary of the dataset
+str(iris) ##presents the structure of the iris dataframe
+```
+
+```{r iris split training test rf}
+set.seed(42)
+trainTestPartition<-createDataPartition(y=iris$Species, #the class label, caret ensures an even split of classes
+                                        p=0.7, #proportion of samples assigned to train
+                                        list=FALSE)
+str(trainTestPartition)
+
+iris.training <- iris[ trainTestPartition,] #take the corresponding rows for training
+iris.testing  <- iris[-trainTestPartition,] #take the corresponding rows for testing by removing training rows
+```
+
+```{r train iris rf}
+set.seed(42)
+seeds = vector(mode='list',length=101)
+for (i in 1:100) seeds[[i]] = sample.int(1000,10)
+seeds[[101]] = sample.int(1000,1)
+
+train_ctrl_seed_repeated = trainControl(method='repeatedcv',
+                              number=10, #number of folds
+                              repeats=10, #number of times to repeat cross-validation
+                              seeds=seeds)
+iris_rf <- train(
+                Species ~ .,
+                data = iris.training,
+                method = "rf",
+                preProc = c("corr","nzv","center", "scale","BoxCox")
+)
+iris_rf
+iris_predict_train=predict(iris_rf,iris.training,type='raw')
+confusionMatrix(iris_predict_train,iris.training$Species)
+iris_predict_test=predict(iris_rf,iris.testing,type='raw')
+confusionMatrix(iris_predict_test,iris.testing$Species)
+```
+In this case, the model predicts the training data perfectly but gives the same confusion matrix on the testing data as for decision trees.
+
+```{r varimp iris}
+importance(iris_rf$finalModel)
+varImpPlot(iris_rf$finalModel)
+```
+
+## Cell segmentation examples
+
+Load required libraries
+```{r echo=T}
+library(caret)
+library(pROC)
+library(e1071)
+```
+
+Load data
+```{r echo=T}
+data(segmentationData)
+segClass <- segmentationData$Class
+segData <- segmentationData[,4:59] ##Extract predictors from segmentationData
+```
+
+Partition data
+```{r echo=T}
+set.seed(42)
+trainIndex <- createDataPartition(y=segClass, times=1, p=0.5, list=F)
+segDataTrain <- segData[trainIndex,]
+segDataTest <- segData[-trainIndex,]
+segClassTrain <- segClass[trainIndex]
+segClassTest <- segClass[-trainIndex]
+```
+
+Set seeds for reproducibility (optional). We will be trying 9 values of the tuning parameter with 5 repeats of 10 fold cross-validation, so we need the following list of seeds.
+```{r echo=T}
+set.seed(42)
+seeds <- vector(mode = "list", length = 51)
+for(i in 1:50) seeds[[i]] <- sample.int(1000, 9)
+seeds[[51]] <- sample.int(1000,1)
+```
+
+We will pass the twoClassSummary function into model training through **trainControl**. Additionally we would like the model to predict class probabilities so that we can calculate the ROC curve, so we use the **classProbs** option. 
+
+```{r echo=T}
+cvCtrl <- trainControl(method = "repeatedcv", 
+                       repeats = 5,
+                       number = 10,
+                       summaryFunction = twoClassSummary,
+                       classProbs = TRUE,
+                       seeds=seeds)
+```
+
+
+```{r echo=T}
+dtreeTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'rpart',
+                   tuneLength = 9,
+                   preProc = c("center", "scale"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+dtreeTune
+
+```
+
+```{r}
+prp(dtreeTune$finalModel)
+```
+
+```{r echo=T, eval=FALSE}
+rfTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'rf',
+                   tuneLength = 9,
+                   preProc = c("center", "scale"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+rfTune
+```
+
+decision tree accuracy profile
+```{r dtreeAccuracyProfileCellSegment, fig.cap='dtree accuracy profile.', out.width='80%', fig.asp=0.7, fig.align='center', echo=T}
+plot(dtreeTune, metric = "ROC", scales = list(x = list(log =2)))
+```
+
+Test set results
+```{r echo=T}
+#segDataTest <- predict(transformations, segDataTest)
+dtreePred <- predict(dtreeTune, segDataTest)
+confusionMatrix(dtreePred, segClassTest)
+```
+
+Get predicted class probabilities
+```{r echo=T}
+dtreeProbs <- predict(dtreeTune, segDataTest, type="prob")
+head(dtreeProbs)
+```
+
+Build a ROC curve
+```{r echo=T}
+dtreeROC <- roc(segClassTest, dtreeProbs[,"PS"])
+auc(dtreeROC)
+```
+
+Plot ROC curve.
+```{r dtreeROCcurveCellSegment, fig.cap='dtree ROC curve for cell segmentation data set.', out.width='80%', fig.asp=1, fig.align='center', echo=T}
+plot(dtreeROC, type = "S")
+```
+
+Calculate area under ROC curve
+```{r echo=T}
+auc(dtreeROC)
+```
+
+Try performing the same analysis for the random forest model too.
+
+## Exercises
+
+**Titanic Data**\ 
+One of the reasons that the shipwreck led to such loss of life was that there were not enough lifeboats for the passengers and crew. Although there was some element of luck involved in surviving the sinking, some groups of people were more likely to survive than others, such as women, children, and the upper-class.
+
+In this exercise, try to complete the analysis of what sorts of people were likely to survive. The data can be downloaded from https://goo.gl/At238b or loaded with ```readRDS('data/titanic.rds')```. Hint: Use decision tree.   
+
+Solutions to exercises can be found in appendix C2_DecisionTree_RandomForests_solutions.Rmd.

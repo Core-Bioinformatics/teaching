@@ -1,0 +1,99 @@
+---
+title: "Cuomo 2020"
+output: html_document
+---
+
+The single-cell RNA-seq data used in this example comes from the Cuomo et al 2020 paper (https://www.nature.com/articles/s41467-020-14457-z). The expression levels have been normalised using SCTransform (https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1). Cells were clustered using Seurat (https://satijalab.org/seurat/). Here, we are only considering cells from day 3, coming from donors hayt, melw and naah. 500 (non-constant) genes have been selected at random to lower the time requirements. We will attempt to classify cells into 3 predefined cell types.
+
+
+```{r load libraries, message=FALSE,warning=FALSE}
+library(caret)
+library(ggplot2)
+library(UpSetR)
+library(GGally)
+library(rpart.plot)
+library(Rtsne)
+library(dplyr)
+library(randomForest)
+```
+
+## Loading data
+
+```{r loading data}
+cuomo = read.csv('Cuomo2020_ML.csv',row.names = 1)
+cuomoData = cuomo[,colnames(cuomo)[colnames(cuomo)!='classification']]
+cuomoClass = cuomo$classification
+```
+
+----------------------------------------------------------------------------------
+
+## Part 1
+
+### Initial visualisation
+
+```{r initial visualisation}
+#Pick a few genes and look at their distribution between samples
+#What other ways could you look at the data?
+```
+
+### Preprocessing
+
+```{r preprocessing}
+#Do some preprocessing, try using the separate functions (nzv, findCorrelations etc.) to understand your data better
+
+```
+
+### Split into training and test
+
+```{r split into training and test}
+#split into training and test (you can either use the combined cuomo or the separate cuomoData and cuomoClass)
+```
+
+### Set up cross-validation
+
+
+```{r train control}
+#set up your train control (e.g. cross-validation)
+```
+
+### k Nearest Neighbours
+
+```{r kNN}
+#train a kNN, look at the hyperparameters and the top chosen genes
+```
+
+----------------------------------------------------------------------------------
+
+## Part 2
+
+### Decision Trees
+
+```{r decision tree}
+#train a decision tree, look at the tree and the features chosen
+```
+
+### Random Forests
+
+```{r random forest}
+#train a random forest, look at the chosen hyperparameters and the variable importance
+```
+
+----------------------------------------------------------------------------------
+
+## Part 3
+
+### SVMs
+
+```{r svm}
+#train svms, try out a few different types of kernel and compare them
+```
+
+----------------------------------------------------------------------------------
+
+## Part 4
+
+### Compare the different models
+
+```{r compare}
+#compare your different model types and the genes chosen by each of them. Which is the best?
+```

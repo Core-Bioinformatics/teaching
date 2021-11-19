@@ -1,0 +1,151 @@
+---
+title: "Cuomo 2020 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries, message=FALSE,warning=FALSE}
+library(caret)
+library(ggplot2); theme_set(theme_bw())
+library(UpSetR)
+library(GGally)
+library(rpart.plot)
+library(Rtsne)
+library(dplyr)
+library(randomForest)
+```
+
+## Loading data
+
+```{r loading data}
+cuomo = read.csv('Cuomo2020_ML.csv',row.names = 1)
+cuomoData = cuomo[,colnames(cuomo)[colnames(cuomo)!='classification']]
+cuomoClass = cuomo$classification
+```
+
+### Remove highly correlated and near-zero variance variables
+
+
+```{r correlation nzv}
+corMat <- cor(cuomoData)
+highCorr <- findCorrelation(corMat, cutoff=0.5)
+highly.correlated = names(cuomoData)[highCorr]
+nzv <- nearZeroVar(cuomoData, saveMetrics=T)
+near.zero.variance = rownames(nzv[nzv$nzv==TRUE | nzv$zeroVar==TRUE,])
+features.to.exclude = unique(c(highly.correlated,near.zero.variance))
+cuomoData = cuomoData[,!(colnames(cuomoData)%in%features.to.exclude)]
+```
+
+### Split into training and test
+
+Remove bad variables (highly correlated and zero/near zero variance) and split into 70% training and 30% test.
+
+```{r exclude bad features}
+set.seed(42)
+trainIndex <- createDataPartition(y=cuomoClass, times=1, p=0.7, list=F)
+classTrain <- as.factor(cuomoClass[trainIndex])
+dataTrain <- cuomoData[trainIndex,]
+classTest <- as.factor(cuomoClass[-trainIndex])
+dataTest <- cuomoData[-trainIndex,]
+```
+
+### Set up cross-validation
+
+Set up 10-fold cross-validation and set seeds for all classification
+
+```{r set seeds and train control}
+set.seed(42)
+seeds <- vector(mode = "list", length = 11)
+for(i in 1:10) seeds[[i]] <- sample.int(1000, 25)
+seeds[[11]] <- sample.int(1000,1)
+
+train_ctrl <- trainControl(method="cv",
+                           number = 10,
+                           preProcOptions=list(cutoff=0.75),
+                           seeds = seeds)
+```
+
+### Decision Tree
+
+```{r dtree}
+dtFit <- train(dataTrain, classTrain,
+               method="rpart",
+               tuneLength=10,
+               trControl=train_ctrl)
+dtFit
+plot(dtFit)
+plot(dtFit,metric="Kappa")
+
+test_pred <- predict(dtFit, dataTest)
+confusionMatrix(test_pred, classTest)
+```
+
+```{r dtree features}
+dtFeat = varImp(dtFit)$importance
+dtFeat$gene = rownames(dtFeat)
+dtFeatures = head(dtFeat[order(-dtFeat$Overall),]$gene,10)
+print(dtFeatures)
+```
+
+Try training decision tree on top 10 features.
+
+```{r dtree top 10 features}
+dataTrain_topfeat = dataTrain[,dtFeatures]
+dataTest_topfeat = dataTest[,dtFeatures]
+dtFit_topfeat <- train(dataTrain_topfeat, classTrain,
+               method="rpart",
+               tuneLength = 10,
+               trControl=train_ctrl)
+dtFit_topfeat
+plot(dtFit_topfeat)
+plot(dtFit_topfeat,metric="Kappa")
+
+test_pred <- predict(dtFit_topfeat, dataTest_topfeat)
+confusionMatrix(test_pred, classTest)
+prp(dtFit_topfeat$finalModel)
+```
+
+### Random Forest
+
+```{r rf}
+rfFit <- train(dataTrain, classTrain,
+               method="rf",
+               preProcess = c("center", "scale"),
+               tuneLength=10,
+               trControl=train_ctrl)
+rfFit
+plot(rfFit)
+plot(rfFit,metric="Kappa")
+
+test_pred <- predict(rfFit, dataTest)
+confusionMatrix(test_pred, classTest)
+
+```
+
+```{r rf features}
+rfFeat = varImp(rfFit)$importance
+rfFeat$gene = rownames(rfFeat)
+rfFeatures = head(rfFeat[order(-rfFeat$Overall),]$gene,10)
+print(rfFeatures)
+varImpPlot(rfFit$finalModel,n.var = 10)
+```
+
+Try training random forest on top 10 features.
+
+```{r rf top 10 features}
+dataTrain_topfeat = dataTrain[,rfFeatures]
+dataTest_topfeat = dataTest[,rfFeatures]
+rfFit_topfeat <- train(dataTrain_topfeat, classTrain,
+               method="rf",
+               tuneLength=10,
+               trControl=train_ctrl)
+rfFit_topfeat
+plot(rfFit_topfeat)
+plot(rfFit_topfeat,metric="Kappa")
+
+test_pred <- predict(rfFit_topfeat, dataTest_topfeat)
+confusionMatrix(test_pred, classTest)
+```

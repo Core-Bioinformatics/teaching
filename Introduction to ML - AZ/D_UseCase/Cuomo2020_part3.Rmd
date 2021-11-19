@@ -1,0 +1,137 @@
+---
+title: "Cuomo 2020 3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load libraries, message=FALSE,warning=FALSE}
+library(caret)
+library(ggplot2); theme_set(theme_bw())
+library(UpSetR)
+library(GGally)
+library(rpart.plot)
+library(Rtsne)
+library(dplyr)
+library(randomForest)
+```
+
+## Loading data
+
+```{r loading data}
+cuomo = read.csv('Cuomo2020_ML.csv',row.names = 1)
+cuomoData = cuomo[,colnames(cuomo)[colnames(cuomo)!='classification']]
+cuomoClass = cuomo$classification
+```
+
+### Remove highly correlated and near-zero variance variables
+
+
+```{r correlation nzv}
+corMat <- cor(cuomoData)
+highCorr <- findCorrelation(corMat, cutoff=0.5)
+highly.correlated = names(cuomoData)[highCorr]
+nzv <- nearZeroVar(cuomoData, saveMetrics=T)
+near.zero.variance = rownames(nzv[nzv$nzv==TRUE | nzv$zeroVar==TRUE,])
+features.to.exclude = unique(c(highly.correlated,near.zero.variance))
+cuomoData = cuomoData[,!(colnames(cuomoData)%in%features.to.exclude)]
+```
+
+### Split into training and test
+
+Remove bad variables (highly correlated and zero/near zero variance) and split into 70% training and 30% test.
+
+```{r exclude bad features}
+set.seed(42)
+trainIndex <- createDataPartition(y=cuomoClass, times=1, p=0.7, list=F)
+classTrain <- as.factor(cuomoClass[trainIndex])
+dataTrain <- cuomoData[trainIndex,]
+classTest <- as.factor(cuomoClass[-trainIndex])
+dataTest <- cuomoData[-trainIndex,]
+```
+
+### Set up cross-validation
+
+Set up 10-fold cross-validation and set seeds for all classification
+
+**Note that for polynomial svm you need 75 in the third line instead of 25 as (by default) 3 different degrees of polynomial are tested (so 25x3=75)**
+
+```{r set seeds and train control}
+set.seed(42)
+seeds <- vector(mode = "list", length = 11)
+for(i in 1:10) seeds[[i]] <- sample.int(1000, 75) ##75 here
+seeds[[11]] <- sample.int(1000,1)
+
+train_ctrl <- trainControl(method="cv",
+                           number = 10,
+                           preProcOptions=list(cutoff=0.75),
+                           seeds = seeds)
+```
+
+
+### Support Vector Machine
+
+Train SVMs using linear, polynomial and radial kernels and compare the accuracy attained.
+
+```{r svm}
+L_models <- train(dataTrain, classTrain,
+                  method="svmLinear",
+                  preProcess = c("center", "scale"),
+                  tuneLength=5,
+                  trControl=train_ctrl)
+P_models <- train(dataTrain, classTrain,
+                  method="svmPoly",
+                  preProcess = c("center", "scale"),
+                  tuneLength=5,
+                  trControl=train_ctrl)
+
+R_models <- train(dataTrain, classTrain,
+                  method="svmRadial",
+                  preProcess = c("center", "scale"),
+                  tuneLength=5,
+                  trControl=train_ctrl)
+
+resamps <- resamples(list(Linear = L_models, Poly = P_models, Radial = R_models))
+summary(resamps)
+bwplot(resamps, metric = "Accuracy")
+densityplot(resamps, metric = "Accuracy",auto.key=TRUE)
+```
+
+```{r svm confusion}
+test_pred <- predict(R_models, dataTest)
+confusionMatrix(test_pred, classTest)
+```
+
+```{r svm features}
+svmFeat = varImp(R_models)$importance
+svmFeatures = head(rownames(svmFeat[order(-rowSums(svmFeat)),]),10)
+print(svmFeatures)
+```
+
+Try training SVM on top 10 features.
+
+```{r svm top 10 features}
+dataTrain_topfeat = dataTrain[,svmFeatures]
+dataTest_topfeat = dataTest[,svmFeatures]
+R_models_topfeat <- train(dataTrain_topfeat, classTrain,
+               method="svmRadial",
+               tuneLength=10,
+               trControl=train_ctrl)
+R_models_topfeat
+plot(R_models_topfeat)
+plot(R_models_topfeat,metric="Kappa")
+
+test_pred <- predict(R_models_topfeat, dataTest_topfeat)
+confusionMatrix(test_pred, classTest)
+```
+
+```{r}
+topfeat = svmFeatures[1]
+secondfeat = svmFeatures[2]
+plot.df = data.frame(topfeature=cuomoData[,topfeat],secondfeature=cuomoData[,secondfeat],class=as.factor(cuomoClass))
+ggplot(plot.df,aes(x=topfeature,y=secondfeature,color=class))+geom_point()+xlab(topfeat)+ylab(secondfeat)
+```
+

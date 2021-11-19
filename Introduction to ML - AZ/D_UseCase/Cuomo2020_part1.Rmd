@@ -1,0 +1,162 @@
+---
+title: "Cuomo 2020 Part 1"
+output: html_document
+---
+
+The single-cell RNA-seq data used in this example comes from the Cuomo et al 2020 paper (https://www.nature.com/articles/s41467-020-14457-z). The expression levels have been normalised using SCTransform (https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1). Cells were clustered using Seurat (https://satijalab.org/seurat/). Here, we are only considering cells from day 3, coming from donors hayt, melw and naah. 500 (non-constant) genes have been selected at random to lower the time requirements. We will attempt to classify cells into 3 predefined cell types.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries, message=FALSE,warning=FALSE}
+library(caret)
+library(ggplot2); theme_set(theme_bw())
+library(UpSetR)
+library(GGally)
+library(rpart.plot)
+library(Rtsne)
+library(dplyr)
+library(randomForest)
+```
+
+## Loading data
+
+```{r loading data}
+cuomo = read.csv('Cuomo2020_ML.csv',row.names = 1)
+cuomoData = cuomo[,colnames(cuomo)[colnames(cuomo)!='classification']]
+cuomoClass = cuomo$classification
+```
+
+## Initial visualisation
+
+Pick a few genes and plot the distribution of expression for that gene in each type.
+
+```{r density plots}
+some.genes = c("YBX1","BANF1","S100A16","MYO1E","AC105460.2")
+for (gene in some.genes){
+  plot.df = data.frame('type'=as.factor(cuomoClass),'gene'=cuomoData[,gene])
+  print(ggplot(plot.df,aes(x=gene,y=..density..,color=type))+geom_density()+ggtitle(gene))
+}  
+
+```
+```{r ggpairs,message=FALSE}
+pairs.df = cuomo[,c(some.genes,'classification')]
+pairs.df$classification = as.factor(pairs.df$classification)
+
+#pdf('ggpairs_5genes.pdf', width=10, height=10)
+ggpairs(pairs.df,mapping = aes(colour=classification,alpha=0.5))
+#dev.off()
+```
+```{r tsne}
+cuomoTsne <- Rtsne(cuomoData, check_duplicates=FALSE, pca=TRUE, perplexity=50, theta=0.5, dims=2)
+print(cuomoTsne$Y %>% 
+  as.data.frame() %>% 
+  rename(tSNE1=V1,  tSNE2=V2) %>% 
+  mutate( samples=as.character(cuomoClass) )%>% 
+  ggplot() +
+  geom_point( mapping = aes(x=tSNE1, y=tSNE2, color=samples), alpha=0.5))
+```
+
+## Preprocessing
+
+### Highly correlated variables
+
+Identify highly correlated variables.
+
+```{r correlation}
+corMat <- cor(cuomoData)
+highCorr <- findCorrelation(corMat, cutoff=0.5)
+highly.correlated = names(cuomoData)[highCorr]
+print(length(highly.correlated))
+print(head(highly.correlated))
+```
+
+### Zero and near-zero variance variables
+ 
+Identify zero and near zero variance variables.
+
+```{r near zero variance}
+nzv <- nearZeroVar(cuomoData, saveMetrics=T)
+near.zero.variance = rownames(nzv[nzv$nzv==TRUE | nzv$zeroVar==TRUE,])
+print(length(near.zero.variance))
+print(head(near.zero.variance))
+```
+
+### Split into training and test
+
+Remove bad variables (highly correlated and zero/near zero variance) and split into 70% training and 30% test.
+
+```{r exclude bad features}
+features.to.exclude = unique(c(highly.correlated,near.zero.variance))
+print(length(features.to.exclude))
+cuomoData = cuomoData[,!(colnames(cuomoData)%in%features.to.exclude)]
+
+set.seed(42)
+trainIndex <- createDataPartition(y=cuomoClass, times=1, p=0.7, list=F)
+classTrain <- as.factor(cuomoClass[trainIndex])
+dataTrain <- cuomoData[trainIndex,]
+classTest <- as.factor(cuomoClass[-trainIndex])
+dataTest <- cuomoData[-trainIndex,]
+```
+
+### Set up cross-validation
+
+Set up 10-fold cross-validation and set seeds for all classification
+
+```{r set seeds and train control}
+set.seed(42)
+seeds <- vector(mode = "list", length = 101)
+for(i in 1:100) seeds[[i]] <- sample.int(1000, 25)
+seeds[[101]] <- sample.int(1000,1)
+
+train_ctrl <- trainControl(method="cv",
+                           number = 10,
+                           seeds = seeds)
+```
+
+## k-Nearest Neighbours
+
+Run k-NN with k ranging from 1 to 50.
+
+```{r kNN}
+tuneParam <- data.frame(k=seq(1,50,2))
+knnFit <- train(dataTrain, classTrain,
+                method="knn",
+                preProcess = c("center", "scale"),
+                tuneGrid=tuneParam,
+                trControl=train_ctrl)
+
+knnFit
+plot(knnFit)
+plot(knnFit,metric="Kappa")
+
+test_pred <- predict(knnFit, dataTest)
+confusionMatrix(test_pred, classTest)
+```
+
+Identify top 10 variables in kNN.
+
+```{r kNN features}
+knnFeat = varImp(knnFit)$importance
+knnFeatures = head(rownames(knnFeat[order(-rowSums(knnFeat)),]),10)
+print(knnFeatures)
+```
+
+Try training kNN on top 10 features.
+
+```{r kNN top 10 features}
+dataTrain_topfeat = dataTrain[,knnFeatures]
+dataTest_topfeat = dataTest[,knnFeatures]
+knnFit_topfeat <- train(dataTrain_topfeat, classTrain,
+               method="knn",
+               tuneGrid=tuneParam,
+               trControl=train_ctrl)
+knnFit_topfeat
+plot(knnFit_topfeat)
+plot(knnFit_topfeat,metric="Kappa")
+
+test_pred <- predict(knnFit_topfeat, dataTest_topfeat)
+confusionMatrix(test_pred, classTest)
+```
