@@ -19,7 +19,7 @@ Methods of clustering can be broadly divided into two types:
 **Partitioning** algorithms divide objects into non-overlapping subsets (examples include k-means and DBSCAN)
 
 
-```{r clusterTypes, fig.cap='Example clusters. **A**, *blobs*; **B**, *aggregation* [@Gionis2007]; **C**, *noisy moons*; **D**, *different density*; **E**, *anisotropic distributions*; **F**, *no structure*.', out.width='80%', fig.asp=1.2, fig.align='center', echo=F}
+```{r clusterTypes, fig.cap='Example clusters. **A**, *blobs*; **B**, *aggregation*; **C**, *noisy moons*; **D**, *different density*; **E**, *anisotropic distributions*; **F**, *no structure*.', out.width='80%', fig.asp=1.2, fig.align='center', echo=F}
 library(ggplot2)
 library(GGally)
 
@@ -66,7 +66,7 @@ pm
 
 ## Distance metrics
 
-Various distance metrics can be used with clustering algorithms. We will use Euclidean distance in the examples and exercises in this chapter.
+Various distance metrics can be used with clustering algorithms. We will use Euclidean distance in the examples and exercise in this chapter.
 
 \begin{equation}
   distance\left(p,q\right)=\sqrt{\sum_{i=1}^{n} (p_i-q_i)^2}
@@ -334,7 +334,7 @@ Density-based spatial clustering of applications with noise
 ### Algorithm
 
 
-Abstract DBSCAN algorithm in pseudocode [@Schubert2017]
+Abstract DBSCAN algorithm in pseudocode
 
 ```
 1 Compute neighbours of each point and identify core points   // Identify core points
@@ -374,7 +374,7 @@ library(dbscan)
 ### Choosing parameters
 The algorithm only needs parameteres **eps** and **minPts**.
 
-Read in data and use **kNNdist** function from [dbscan](https://cran.r-project.org/package=dbscan) package to plot the distances of the 10-nearest neighbours for each observation (figure \@ref(fig:blobsKNNdist)).
+Read in data and use **kNNdist** function from [dbscan](https://cran.r-project.org/package=dbscan) package to plot the distances of the 10-nearest neighbours for each observation.
 
 ```{r blobsKNNdist, fig.cap='10-nearest neighbour distances for the blobs data set', out.width='75%', fig.asp=0.7, fig.align='center', echo=T}
 blobs <- read.csv("data/example_clusters/blobs.csv", header=F)
@@ -768,7 +768,7 @@ Load library required for calculating silhouette coefficients and plotting silho
 library(cluster)
 ```
 
-We are going to take another look at k-means clustering of the blobs data-set (figure \@ref(fig:kmeansRangeK)). Specifically we are going to see if silhouette analysis supports our original choice of k=3 as the optimum number of clusters (figure \@ref(fig:choosingKplot)).
+We are going to take another look at k-means clustering of the blobs data-set. Specifically we are going to see if silhouette analysis supports our original choice of k=3 as the optimum number of clusters.
 
 Silhouette analysis requires a minimum of two clusters, so we'll try values of k from 2 to 9.
 ```{r echo=T}
@@ -827,7 +827,7 @@ ggplot(data=dat, aes(x=k, y=avgS)) +
   theme_bw()
 ```
 
-The bar plot (figure \@ref(fig:silhouetteAllK)) confirms that the optimum number of clusters is three.
+The bar plot confirms that the optimum number of clusters is three.
 
 ### Example - DBSCAN clustering of noisy moons
 <!--
@@ -836,7 +836,7 @@ Read data
 noisy_moons <- read.csv("data/example_clusters/noisy_moons.csv", header=F)
 ```
 -->
-The clusters that DBSCAN found in the noisy moons data set are shown in figure \@ref(fig:noisyMoonsDBSCANscatter).
+The clusters that DBSCAN found in the noisy moons data set were presented earlier.
 
 Let's repeat clustering, because the original result is no longer in memory.
 ```{r echo=T}
@@ -1016,7 +1016,7 @@ table(tissue, res_k_15[[7]]$cluster)
 ```
 The analysis has found a distinct cluster for each tissue and therefore performed slightly better than the earlier hierarchical clustering analysis, which placed endometrium and kidney observations in the same cluster.
 
-To visualize the result in a 2D scatter plot we first need to apply dimensionality reduction. We will use principal component analysis (PCA), which was described in chapter \@ref(dimensionality-reduction).
+To visualize the result in a 2D scatter plot we first need to apply dimensionality reduction. We will use principal component analysis (PCA), which was described in the dimensionality reduction chapter.
 
 ```{r tissueExpressionPCA, fig.cap='K-means clustering of human gene expression (k=7): scatterplot of first two principal components.', out.width='50%', fig.asp=1, fig.align='center', echo=T}
 pca <- prcomp(t(e))
@@ -1065,7 +1065,7 @@ ggplot(data=as.data.frame(pca$x), aes(PC1,PC2)) +
 
 ### Exercise 1 {#clusteringEx1}
 
-Image segmentation is used to partition digital images into distinct regions containing pixels with similar attributes. Applications include identifying objects or structures in biomedical images. The aim of this exercise is to use k-means clustering to segment the image of a histological section of lung tissue (figure \@ref(fig:lungHistology)) into distinct biological structures, based on pixel colour.
+Image segmentation is used to partition digital images into distinct regions containing pixels with similar attributes. Applications include identifying objects or structures in biomedical images. The aim of this exercise is to use k-means clustering to segment the image of a histological section of lung tissue into distinct biological structures, based on pixel colour.
 
 ```{r lungHistology, fig.cap='Image of haematoxylin and eosin (H&E) stained section of lung tissue from a patient with end-stage emphysema. CC BY 2.0, https://commons.wikimedia.org/w/index.php?curid=437645.', out.width='80%', fig.align='center', echo=F}
 knitr::include_graphics("data/histology/Emphysema_H_and_E.jpg")
@@ -1081,7 +1081,7 @@ The haematoxylin and eosin (H & E) staining reveals four types of biological obj
 **Consider the following questions:**
 
 * Can k-means clustering find the four biological objects in the image based on pixel colour? 
-* Earlier we saw that if we plot the total within-cluster sum of squares against k, the position of the "elbow" is a useful guide to choosing the appropriate value of k (see section \@ref(choosingK). According to the "elbow" method, how many distinct clusters (colours) of pixels are present in the image?
+* Earlier we saw that if we plot the total within-cluster sum of squares against k, the position of the "elbow" is a useful guide to choosing the appropriate value of k. According to the "elbow" method, how many distinct clusters (colours) of pixels are present in the image?
 
 **Hints:**
 If you haven't worked with images in R before, you may find the following information helpful.
@@ -1132,6 +1132,6 @@ This should be all the information you need to perform this exercise.
 
 
 
-**Solutions to exercises can be found in appendix \@ref(solutions-clustering).**
+**Solutions to exercises can be found in E2_Clustering_ExerciseSolutions.**
 
 
