@@ -1,0 +1,238 @@
+---
+title: "Cuomo 2020 unsupervised learning practical"
+output: html_document
+---
+
+The single-cell RNA-seq data used in this example comes from the Cuomo et al 2020 paper (https://www.nature.com/articles/s41467-020-14457-z). The expression levels have been normalised using SCTransform (https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1). Here, we are only considering cells from day 3, coming from donors hayt, melw and naah. 500 (non-constant) genes have been selected at random to lower the time requirements. We will apply dimensionalitiy reduction methods and attempt to cluster the cells.
+
+
+```{r load libraries, message=FALSE, warning=FALSE}
+library(tibble)
+library(dplyr)
+library(ggplot2); theme_set(theme_minimal())
+library(GGally)
+library(scales)
+library(RColorBrewer)
+library(Rtsne)
+library(umap)
+library(dendextend)
+
+set.seed(2021)
+```
+
+## Loading data
+
+Let's first load the data. We split out the actual classes and we will ignore these for all unsupervised algorithms.
+
+```{r loading data}
+cuomo = read.csv('data/Cuomo2020_ML.csv', row.names = 1)
+cuomoData = cuomo[, colnames(cuomo)[colnames(cuomo) != 'classification']]
+cuomoClass = as.factor(cuomo$classification)
+```
+
+Let's also create a centered and z-transformed version of the data.
+
+```{r transforming data}
+cuomoDataCentered = scale(cuomoData, center = TRUE, scale = FALSE)
+cuomoDataZtransformed = scale(cuomoData, center = TRUE, scale = TRUE)
+```
+
+----------------------------------------------------------------------------------
+
+## Part 1 - Dimensionality reduction
+
+### PCA
+
+Run a PCA on the dataset and plot the first two PCs. Optionally colour the points using the classes.
+
+```{r pca}
+pca <- prcomp(cuomoData, center = TRUE, scale = TRUE)
+plot.df <- pca$x %>%
+  as.data.frame() %>%
+  mutate(class = cuomoClass)
+ggplot(plot.df) +
+  geom_point(aes(x = PC1, y = PC2, colour = class))
+
+```
+
+Plot the genes contributing most to PC1 in PCA space.
+
+```{r pca_genes}
+plot.df <- pca$rotation %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene') %>%
+  mutate(absPC1 = abs(PC1)) %>%
+  arrange(desc(absPC1)) %>%
+  head()
+
+ggplot(plot.df) +
+  geom_text(aes(x = PC1, y = PC2, label = gene)) +
+  scale_x_continuous(limits = c(-0.4, 0.4)) +
+  scale_y_continuous(limits = c(-0.4, 0.4)) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  geom_segment( mapping = aes(x = 0, y = 0, xend = PC1, yend = PC2), 
+                arrow = arrow(length = unit(0.25, 'cm')), inherit.aes = FALSE)
+
+```
+
+### t-SNE
+
+Run th t-SNE dimensionality reducion and plot the cells.
+
+```{r tsne}
+tsne <- Rtsne(cuomoData, check_duplicates = FALSE, pca = TRUE, dims = 2)
+plot.df <- tsne$Y %>%
+  as.data.frame() %>%
+  mutate(class = cuomoClass) %>%
+  rename(tSNE1 = V1, tSNE2 = V2)
+ggplot(plot.df) +
+  geom_point(aes(x = tSNE1, y = tSNE2, colour = class))
+```
+
+### UMAP
+
+Try UMAP, a different non-linear dimensionality reduction (hint: use the umap() function from the umap package).
+
+```{r umap}
+umap <- umap(cuomoData)
+plot.df <- umap$layout %>%
+  as.data.frame() %>%
+  mutate(class = cuomoClass) %>%
+  rename(UMAP1 = V1, UMAP2 = V2)
+ggplot(plot.df) +
+  geom_point(aes(x = UMAP1, y = UMAP2, colour = class))
+```
+
+
+----------------------------------------------------------------------------------
+
+## Part 2
+
+### Hierarchical clustering
+
+Perform hierarchical clustering on the data. Try using the raw, centered, z-transformed, and pca-transformed data as input. What do you observe? What could you do to improve the results? (hint: use the PCA)
+
+```{r hclust}
+perform_hierarchical_clustering <- function(data, n_clusters = 3){
+  d <- dist(data)
+  dend <- as.dendrogram(hclust(d, method = "average"))
+  clusters <- cutree(dend, n_clusters, order_clusters_as_data = FALSE)
+  dend <- color_branches(dend, clusters = clusters, col = hue_pal()(n_clusters))
+  labels(dend) <- rep("", nrow(data))
+  ggd <- as.ggdend(dend)
+  ggd$nodes <- ggd$nodes[!(seq_len(length(ggd$nodes[, 1]))), ]
+  clusters <- clusters[rownames(data)]
+  plot.df <- pca$x %>%
+    as.data.frame() %>%
+    mutate(class = cuomoClass,
+           cluster = as.factor(clusters))
+  plotList <- list(
+    ggplot(ggd),
+    ggplot(plot.df) + 
+      geom_point(aes(x = PC1, y = PC2, colour = cluster)),
+    ggplot(plot.df) + 
+      geom_point(aes(x = PC1, y = PC2, colour = class))
+  )
+  pm <- ggmatrix(
+    plotList, nrow = 1, ncol = 3, 
+    showXAxisPlotLabels = FALSE, showYAxisPlotLabels = FALSE, 
+    xAxisLabels = c("dendrogram", "scatter plot - clusters", "scatter plot - classes")
+  )
+  pm
+}
+perform_hierarchical_clustering(cuomoData)
+perform_hierarchical_clustering(cuomoDataCentered)
+perform_hierarchical_clustering(cuomoDataZtransformed)
+perform_hierarchical_clustering(pca$x)
+
+perform_hierarchical_clustering(pca$x[, 1:2])
+perform_hierarchical_clustering(pca$x[, 1:2], n_clusters = 7)
+
+```
+
+### K-means
+
+Run k-means for k=3 and plot the results. Try using the raw, centered, z-transformed, and pca-transformed data as input. Which input makes the algorithm perform better?
+
+```{r kmeans}
+kmR <- kmeans(cuomoData, 3, nstart = 50)
+kmC <- kmeans(cuomoDataCentered, 3, nstart = 50)
+kmZ <- kmeans(cuomoDataZtransformed, 3, nstart = 50)
+kmP <- kmeans(pca$x, 3, nstart = 50)
+
+plot_k_means_result_on_PCA <- function(km){
+  plot.df <- pca$x %>%
+    as.data.frame() %>%
+    mutate(class = cuomoClass,
+           cluster = as.factor(km$cluster))
+  p1 <- ggplot(plot.df) +
+    geom_point(aes(x = PC1, y = PC2, colour = cluster))
+  p2 <- ggplot(plot.df) +
+    geom_point(aes(x = PC1, y = PC2, colour = class))
+  
+  ggmatrix(list(p1, p2), nrow = 1, ncol = 2, xAxisLabels = c("k-means clusters", "original classes"))
+}
+
+plot_k_means_result_on_PCA(kmR)
+plot_k_means_result_on_PCA(kmC)
+plot_k_means_result_on_PCA(kmZ)
+plot_k_means_result_on_PCA(kmP)
+```
+
+Try out different k values. Which one would you choose if you didn't know the number of classes in advance?
+
+```{r kmeans choose k}
+point_colours <- brewer.pal(9, "Set1")
+k <- 1:9
+res <- lapply(k, function(i) kmeans(pca$x, i, nstart = 50))
+
+plotList <- lapply(k, function(i){
+  plot.df <- pca$x %>%
+    as.data.frame() %>%
+    mutate(class = cuomoClass,
+           cluster = as.factor(res[[i]]$cluster))
+  ggplot(plot.df, aes(x = PC1, y = PC2)) + 
+    geom_point(col = point_colours[res[[i]]$cluster], size = 1) +
+    annotate("text", x = -5, y = 5, label = paste0("k=", i), size = 8, col = "black")
+})
+
+pm <- ggmatrix(plotList, nrow = 3, ncol=3, showXAxisPlotLabels = T, showYAxisPlotLabels = T)
+pm
+```
+
+### DBSCAN
+
+Run the DBSCAN algorithm with different input and parameters. What do you observe? What does that tell you about the data?
+
+```{r dbscan}
+res <- dbscan::dbscan(cuomoData, eps = 0.6, minPts = 10)
+res
+res <- dbscan::dbscan(cuomoData, eps = 0.1, minPts = 2)
+res
+res <- dbscan::dbscan(cuomoData, eps = 10, minPts = 2)
+res
+
+res <- dbscan::dbscan(cuomoDataCentered, eps = 0.6, minPts = 10)
+res
+res <- dbscan::dbscan(cuomoDataCentered, eps = 0.1, minPts = 2)
+res
+res <- dbscan::dbscan(cuomoDataCentered, eps = 10, minPts = 2)
+res
+
+res <- dbscan::dbscan(cuomoDataZtransformed, eps = 0.6, minPts = 10)
+res
+res <- dbscan::dbscan(cuomoDataZtransformed, eps = 0.1, minPts = 2)
+res
+res <- dbscan::dbscan(cuomoDataZtransformed, eps = 10, minPts = 2)
+res
+
+res <- dbscan::dbscan(pca$x, eps = 0.6, minPts = 10)
+res
+res <- dbscan::dbscan(pca$x, eps = 0.1, minPts = 2)
+res
+res <- dbscan::dbscan(pca$x, eps = 10, minPts = 2)
+res
+```
+
+----------------------------------------------------------------------------------

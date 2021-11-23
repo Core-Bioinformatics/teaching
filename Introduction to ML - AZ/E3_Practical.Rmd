@@ -1,0 +1,109 @@
+---
+title: "Cuomo 2020 unsupervised learning practical"
+output: html_document
+---
+
+The single-cell RNA-seq data used in this example comes from the Cuomo et al 2020 paper (https://www.nature.com/articles/s41467-020-14457-z). The expression levels have been normalised using SCTransform (https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1874-1). Here, we are only considering cells from day 3, coming from donors hayt, melw and naah. 500 (non-constant) genes have been selected at random to lower the time requirements. We will apply dimensionalitiy reduction methods and attempt to cluster the cells.
+
+
+```{r load libraries, message=FALSE, warning=FALSE}
+library(tibble)
+library(dplyr)
+library(ggplot2); theme_set(theme_minimal())
+library(GGally)
+library(scales)
+library(RColorBrewer)
+library(Rtsne)
+library(umap)
+library(dendextend)
+
+set.seed(2021)
+```
+
+## Loading data
+
+Let's first load the data. We split out the actual classes and we will ignore these for all unsupervised algorithms.
+
+```{r loading data}
+cuomo = read.csv('data/Cuomo2020_ML.csv', row.names = 1)
+cuomoData = cuomo[, colnames(cuomo)[colnames(cuomo) != 'classification']]
+cuomoClass = as.factor(cuomo$classification)
+```
+
+Let's also create a centered and z-transformed version of the data.
+
+```{r transforming data}
+cuomoDataCentered = scale(cuomoData, center = TRUE, scale = FALSE)
+cuomoDataZtransformed = scale(cuomoData, center = TRUE, scale = TRUE)
+```
+
+----------------------------------------------------------------------------------
+
+## Part 1 - Dimensionality reduction
+
+### PCA
+
+Run a PCA on the dataset and plot the first two PCs. Optionally colour the points using the classes.
+
+```{r pca}
+
+```
+
+Plot the genes contributing most to PC1 in PCA space.
+
+```{r pca_genes}
+
+```
+
+### t-SNE
+
+Run th t-SNE dimensionality reducion and plot the cells.
+
+```{r tsne}
+
+```
+
+### UMAP
+
+Try UMAP, a different non-linear dimensionality reduction (hint: use the umap() function from the umap package).
+
+```{r umap}
+
+```
+
+
+----------------------------------------------------------------------------------
+
+## Part 2
+
+### Hierarchical clustering
+
+Perform hierarchical clustering on the data. Try using the raw, centered, z-transformed, and pca-transformed data as input. What do you observe? What could you do to improve the results? (hint: use the PCA)
+
+```{r hclust}
+
+```
+
+### K-means
+
+Run k-means for k=3 and plot the results. Try using the raw, centered, z-transformed, and pca-transformed data as input. Which input makes the algorithm perform better?
+
+```{r kmeans}
+
+```
+
+Try out different k values. Which one would you choose if you didn't know the number of classes in advance?
+
+```{r kmeans choose k}
+
+```
+
+### DBSCAN
+
+Run the DBSCAN algorithm with different input and parameters. What do you observe? What does that tell you about the data?
+
+```{r dbscan}
+
+```
+
+----------------------------------------------------------------------------------
