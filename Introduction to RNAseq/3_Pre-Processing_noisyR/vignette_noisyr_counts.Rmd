@@ -1,0 +1,340 @@
+---
+title: "noisyR count matrix approach workflow"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{noisyR count matrix approach workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+<div style="text-align: justify"> 
+
+```{r options, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+The *noisyR* package is an end-to-end pipeline for quantifying and removing technical noise from HTS datasets. The three main pipeline steps are:  
+
+1. similarity calculation  
+1. noise quantification  
+1. noise removal  
+
+Each step can be finely tuned using hyperparameters; optimal, data-driven values for these parameters are also determined. 
+
+The package and some applications are described in more detail in [this publication](https://doi.org/10.1093/nar/gkab433) and is actively maintained on https://github.com/Core-Bioinformatics/noisyR.
+
+The **count matrix approach** uses the original, un-normalised count matrix, as provided after alignment and feature quantification; each sample is processed individually, only the relative expressions across samples are compared. Relying on the hypothesis that the majority of genes are not DE, most of the evaluations are expected to point towards a high similarity across samples. 
+
+# Installation
+
+To install the package, first install all bioconductor dependencies:
+```{r bioc_install, eval = FALSE}
+packages.bioc <- c("preprocessCore",
+                   "IRanges",
+                   "GenomicRanges",
+                   "Rsamtools")
+new.packages.bioc <- packages.bioc[!(packages.bioc %in% installed.packages()[,"Package"])]
+if(length(new.packages.bioc)){
+  if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+  BiocManager::install(new.packages.bioc)
+}
+```
+Then, you can install *noisyR* (and all its other dependencies) from CRAN:
+```{r cran_install, eval = FALSE}
+install.packages("noisyr")
+```
+To install the latest stable version from GitHub, first install CRAN dependencies:
+```{r github_install, eval = FALSE}
+packages.cran <- c("utils",
+                   "grDevices",
+                   "tibble",
+                   "dplyr",
+                   "magrittr",
+                   "ggplot2",
+                   "philentropy",
+                   "doParallel",
+                   "foreach")
+new.packages.cran <- packages.cran[!(packages.cran %in% installed.packages()[,"Package"])]
+if(length(new.packages.cran))
+  install.packages(new.packages.cran)
+
+if (!requireNamespace("devtools", quietly = TRUE))
+  install.packages("devtools")
+devtools::install_github("Core-Bioinformatics/noisyR")
+```
+
+# Preprocessing
+
+First, load *noisyR*:
+
+```{r setup}
+library(noisyr)
+```
+
+For this demonstration we will be using a subset of the count matrix for an experiment included in [a 2019 paper by Yang et al](https://www.sciencedirect.com/science/article/pii/S2405471219301152). Rows represent genes/features and columns represent samples:
+
+```{r read}
+counts.in <- system.file("extdata", "counts_raw.csv", package = "noisyr")
+df <- read.csv(counts.in, row.names = 1)
+str(df)
+head(df)
+```
+
+Note that when reading from a file R typically returns a data frame. To convert to a matrix we use the function *cast_matrix_to_numeric()*. This also converts values to numeric (in case they were read as characters). Any values that are not coercible to numeric are replaced by 0.
+
+```{r convert}
+expression.matrix <- noisyr::cast_matrix_to_numeric(df)
+```
+
+# Running *noisyR*
+
+The full *noisyR* pipeline can be run through *noisyr()*, choosing "counts" for the count matrix approach (internally calls *noisyr_counts()*). The user can pass many arguments to this function, which alter the behaviour of the different pipeline steps, as discussed in the breakdown below.
+
+```{r noisyr_counts}
+expression.matrix.denoised.standard <- noisyr::noisyr(
+  approach.for.similarity.calculation = "counts", 
+  expression.matrix = df
+)
+```
+
+The output of the noise removal is a denoised matrix that can be passed on to other methods for downstream analysis.
+
+```{r rm_noise_out}
+head(expression.matrix.denoised.standard)
+apply(expression.matrix.denoised.standard, 2, min)
+```
+
+# Pipeline breakdown
+
+While for most applications, running *noisyr()* is sufficient, it may be useful to run individual pipeline steps manually. For example, the user may want to create summary figures for the denoising, store the noise thresholds obtained or other intermediary outputs, or try out different options without rerunning all steps. In this section, we look deeper into *noisyr()* and break down the three main steps that are performed.
+
+## Similarity calculation
+
+We can then run the similarity calculation using *calculate_expression_similarity_counts()*:
+
+```{r runCM}
+expression.summary <- noisyr::calculate_expression_similarity_counts(
+  expression.matrix = expression.matrix, 
+  similarity.measure = "correlation_pearson"
+)
+str(expression.summary)
+```
+
+Users can select a similarity measure to assess the localised consistency in expression across samples (dissimilarity measures are inverted). See the *philentropy* package documentation for more information on the different distances. The full list of available metrics can be viewed by:
+
+```{r dist_metrics}
+noisyr::get_methods_correlation_distance()
+```
+
+By default, the window length is 10% of the number of rows in the matrix, as it has proven effective empirically. A different window can be specified by the *n.elements.per.window* parameter. The optimal window length can also be estimated by seeking stability of output (but this can be computationally intensive for large datasets):
+
+```{r window_opt}
+noisyr::optimise_window_length(
+  expression.matrix = expression.matrix,
+  similarity.measure = "correlation_pearson"
+)
+```
+
+Window length optimisation can be turned on using the *optimise.window.length.logical* parameter in *noisyr()* or *noisyr_counts()*.
+
+Plots of the abundance-correlation relation can be generated through the *plot_expression_similarity()* function:
+
+```{r simple_plot, warning = FALSE}
+plotlist <- noisyr::plot_expression_similarity(
+  expression.summary = expression.summary)
+plotlist[[1]]
+```
+
+> As expected, we observe low correlation values for low abundances and a steady increase towards 1 as the abundance increases. This is based on the expectation that most genes are not differentially expressed and have consistent expression, but at low abundances the stochastic nature of transcription and sequencing gives rise to noise. The local maximum at very low abundances is due to strings of zeros driving the correlation higher than expected. 
+
+These are ggplot objects, and can thus be modified and combined intuitively. For example, plotting all the line plots together:
+
+```{r combined_plot, warning = FALSE}
+plotdf.line <- tibble::tibble()
+for(i in 1:4){
+  lineid <- i * 2 - 1
+  plotdf.line <- rbind(
+    plotdf.line, 
+    dplyr::mutate(plotlist[[lineid]]$data,
+                  Sample=colnames(expression.matrix)[i]))
+}
+
+ggplot2::ggplot(plotdf.line) +
+    ggplot2::theme_minimal() + 
+    ggplot2::geom_line(ggplot2::aes(x=x, y=y, colour=Sample)) +
+    ggplot2::geom_smooth(ggplot2::aes(x,y,colour=Sample), method="loess",
+                         formula= y ~ x, span=0.1) +
+    ggplot2::ylim(0:1) +
+    ggplot2::xlab("log2(expression)") +
+    ggplot2::ylab("Pearson correlation") +
+    ggplot2::geom_hline(yintercept=0.25, color="black")
+```
+
+## Noise quantification
+
+Using the output of the similarity calculation, we can compute the signal to noise threshold in each sample:
+
+```{r calc_thr}
+noise.thresholds <- noisyr::calculate_noise_threshold(expression = expression.summary)
+noise.thresholds
+```
+
+Here we used the default parameters: a similarity threshold of 0.25 and the Boxplot-IQR method. There are several methods available, which can be viewed with the *get_methods_calculate_noise_threshold()* function:
+
+```{r get_thr_methods}
+noisyr::get_methods_calculate_noise_threshold()
+```
+
+The first three methods are just calculating the minimum of the density plot for all genes (a common, fast approach). This usually provides a rough, overestimated signal to noise threshold.
+
+The rest of the methods use either the (smoothed) line plot or the boxplot to find the noise threshold given a similarity (correlation/distance) threshold.
+
+It is recommended that the method with the least coefficient of variation across all samples is chosen for noise removal. This can also be applied to compute the correlation/distance threshold instead of supplying it manually, which is especially useful for non-correlation measures which don't have a standard range. 
+
+For example, by looking to minimise the coefficient of variation, we get a correlation threshold of 0.21 and the loess10 smoothing method for this dataset (by default all methods from *get_methods_calculate_noise_threshold()* are used:
+
+```{r calc_thr_range}
+similarity.threshold.sequence <- seq(0.2, 0.3, by=0.01)
+stats.table <- noisyr::calculate_noise_threshold_method_statistics(
+  expression = expression.summary,
+  similarity.threshold.sequence = similarity.threshold.sequence
+)
+row.min.coef.var <- which.min(stats.table$noise.threshold.coefficient.of.variation)
+# adjust column names for printing
+colnames(stats.table) <- c("approach", "method", "corr.thr", "min", "mean", "coef.var", "max", "all")
+stats.table[row.min.coef.var, 1:7]
+dplyr::filter(stats.table, round(corr.thr, 2) == 0.21)[, 1:7]
+dplyr::filter(stats.table, method == "loess10_smoothing")[, 1:7]
+```
+
+We can then call *calculate_noise_threshold()* with our optimised parameters:
+
+```{r calc_thr_adjusted}
+noise.thresholds <- noisyr::calculate_noise_threshold(
+  expression = expression.summary,
+  similarity.threshold = 0.21,
+  method.chosen = "Line_plot-loess10_smoothing"
+)
+noise.thresholds
+```
+
+Parameter optimisation can be turned on by specifying vectors of values for *similarity.threshold* and/or *method.chosen* (a subset of *get_methods_calculate_noise_threshold()*) when calling *noisyr()* or *noisyr_counts()*.
+
+## Noise removal
+
+To produce the denoised count matrix, the function *remove_noise_from_matrix()* is used with a specified vector of noise thresholds (usually calculated by *calculate_noise_threshold()*).
+
+```{r rm_noise_matrix}
+expression.matrix.denoised <- noisyr::remove_noise_from_matrix(
+  expression.matrix = expression.matrix,
+  noise.thresholds = noise.thresholds)
+str(expression.matrix.denoised)
+```
+
+The behaviour of *remove_noise_from_matrix()* can be further modified:
+
+* __*add.threshold*__ whether to add the noise threshold to each entry (default) or set each entry under the noise threshold to the noise threshold.
+* __*average.threshold*__ whether the noise thresholds for the different samples are averaged (default) or used individually. The latter should be especially avoided if the thresholds have high variance, as it could intoduce artificial differences in the data.  
+* __*remove.noisy.features*__ whether genes/features whose expression is under the noise threshold in every sample should be removed from the matrix (default) or not  
+
+Because of these defaults, passing the mean of the thresholds gives a slightly different result (different # of genes fully under the noise threshold:
+
+```{r rm_noise_param}
+expression.matrix.denoised.fixed <- noisyr::remove_noise_from_matrix(
+  expression.matrix = expression.matrix, 
+  noise.thresholds = mean(noise.thresholds))
+nrow(expression.matrix.denoised); nrow(expression.matrix.denoised.fixed)
+```
+
+By supplying the corresponding parameters to *noisyr()*, we obtain the same final result from the full pipeline:
+
+```{r pipeline_comparison}
+expression.matrix.denoised.full.pipeline <- noisyr::noisyr(
+  approach.for.similarity.calculation = "counts", 
+  expression.matrix = expression.matrix,
+  similarity.measure = "correlation_pearson",
+  optimise.window.length.logical = FALSE,
+  similarity.threshold = seq(0.2, 0.3, by=0.01),
+  method.chosen = get_methods_calculate_noise_threshold()
+)
+identical(expression.matrix.denoised,
+          expression.matrix.denoised.full.pipeline)
+```
+
+# Downstream analysis
+
+The denoised matrix can be used instead of the raw count matrix for downstream analysis. Here we present a simple example of a differential expression (DE) analysis and compare the two.
+
+We create a function to perform the same DE pipeline on both matrices, using [the edgeR package](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2796818/).
+
+```{r edgeR, eval = FALSE}
+DE_edgeR = function(expression.matrix, metadata){
+  # load or install edgeR
+  if(!require(edgeR)){
+    if (!requireNamespace("BiocManager", quietly = TRUE))
+      install.packages("BiocManager")
+    BiocManager::install("edgeR")
+  }
+  
+  # create metadata
+  metadata <- data.frame(id = colnames(expression.matrix),
+                         timepoint = c("0h", "0h", "12h", "12h"))
+  
+  # quantile normalise
+  expression.matrix.normalised <-
+    preprocessCore::normalize.quantiles(expression.matrix)
+  rownames(expression.matrix.normalised) <- base::rownames(expression.matrix)
+  colnames(expression.matrix.normalised) <- base::colnames(expression.matrix)
+  
+  # process using edgeR
+  expression.matrix.for.de <- round(expression.matrix.normalised)
+  expression.matrix.for.de <- 
+    expression.matrix.for.de[apply(expression.matrix.for.de, 1, sum) > 0, ]
+  design <- model.matrix(~ 0 + metadata$timepoint)
+  edger <- DGEList(counts = expression.matrix.for.de)
+  edger <- estimateDisp(edger, design)
+  edger.fit <- glmFit(edger, design)
+  edger.lrt <- glmLRT(edger.fit, contrast=c(-1, 1))
+  
+  # extract results
+  res <- topTags(edger.lrt, n = Inf)$table
+  res$DE <- res$FDR < 0.05 & abs(res$logFC) > 1
+  
+  # make volcano plot
+  print(
+    ggplot2::ggplot(res) + 
+      ggplot2::theme_minimal() +
+      ggplot2::geom_point(ggplot2::aes(x=logFC, 
+                                       y=-log10(FDR), 
+                                       colour=DE), 
+                          show.legend=FALSE) +
+      ggplot2::scale_color_manual(values=c("black", "red")) +
+      ggplot2::lims(x=c(-12, 12), y=c(0, 120))
+  )
+  
+  return(res)
+  
+}
+
+results.raw <- DE_edgeR(expression.matrix)
+results.denoised <- DE_edgeR(expression.matrix.denoised)
+```
+
+```{r volcanos, echo = FALSE, out.width = "100%"}
+knitr::include_graphics("volcanos.png") 
+```
+
+> We observe the distribution of genes in the volcano plots becoming a lot tighter for the denoised matrix. For the raw matrix, there are a lot of genes with low p-values and high log-fold changes that are barely called DE. Those "whiskers" are corrected for the denoised matrix.
+
+We can also see the number of differentially expressed genes has been reduced.
+
+```{r session}
+sessionInfo()
+```
+
+</div>
