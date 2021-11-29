@@ -9,7 +9,7 @@ The current form of these materials is subject to copyright.
 * Machine learning
 * RNA-Seq data analysis pipeline
 
-[Introduction to ML - AZ](Introduction%20to%20ML%20-%20AZ) contains an introductory practical machine learning delivered to Astra Zeneca in November 2021
+[Introduction to ML - AZ](Introduction%20to%20ML%20-%20AZ) contains an introductory practical machine learning course delivered to Astra Zeneca in November 2021
 
 * Introduction, overview of techniques and cross-validation
 * CARET package and k nearest neighbours
