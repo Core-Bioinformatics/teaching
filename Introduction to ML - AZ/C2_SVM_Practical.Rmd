@@ -1,0 +1,300 @@
+---
+title: "SVM Practical"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Blood Brain Barrier (Regression)
+
+On the BBB dataset, we would like to compare all 4 types of model and how they perform on the test dataset. Firstly, we will prepare the dataset as usual:
+
+```{r}
+library(caret)
+
+# Load BBB data
+data(BloodBrain)
+
+# Split into training and test
+set.seed(42)
+trainIndex <- createDataPartition(y=logBBB, times=1, p=0.8, list=F)
+descrTrain <- bbbDescr[trainIndex,]
+concRatioTrain <- logBBB[trainIndex]
+descrTest <- bbbDescr[-trainIndex,]
+concRatioTest <- logBBB[-trainIndex]
+
+# Preprocess training data
+transformations <- preProcess(descrTrain,
+                              method=c("corr", "nzv", "scale", "center"),
+                              cutoff=0.75)
+descrTrain <- predict(transformations, descrTrain)
+```
+
+We then set up our 5-fold cross validation as usual:
+
+```{r}
+# Set up seeds
+set.seed(42)
+seeds <- vector(mode = "list", length = 6)
+for(i in 1:5) seeds[[i]] <- sample.int(1000, 9)
+seeds[[6]] <- sample.int(1000,1)
+trainctrl = trainControl(method="cv",
+                        number = 5,
+                        seeds=seeds)
+```
+
+For consistency with the lecture on Monday, we are going to use the E1071 implementation of a radial SVM, defined below.
+
+```{r}
+svmRadialE1071 <- list(
+  label = "Support Vector Machines with Radial Kernel - e1071",
+  library = "e1071",
+  type = c("Regression", "Classification"),
+  parameters = data.frame(parameter="cost",
+                          class="numeric",
+                          label="Cost"),
+  grid = function (x, y, len = NULL, search = "grid") 
+    {
+      if (search == "grid") {
+        out <- expand.grid(cost = 2^((1:len) - 3))
+      }
+      else {
+        out <- data.frame(cost = 2^runif(len, min = -5, max = 10))
+      }
+      out
+    },
+  loop=NULL,
+  fit=function (x, y, wts, param, lev, last, classProbs, ...) 
+    {
+      if (any(names(list(...)) == "probability") | is.numeric(y)) {
+        out <- e1071::svm(x = as.matrix(x), y = y, kernel = "radial", 
+                          cost = param$cost, ...)
+      }
+      else {
+        out <- e1071::svm(x = as.matrix(x), y = y, kernel = "radial", 
+                          cost = param$cost, probability = classProbs, ...)
+      }
+      out
+    },
+  predict = function (modelFit, newdata, submodels = NULL) 
+    {
+      predict(modelFit, newdata)
+    },
+  prob = function (modelFit, newdata, submodels = NULL) 
+    {
+      out <- predict(modelFit, newdata, probability = TRUE)
+      attr(out, "probabilities")
+    },
+  predictors = function (x, ...) 
+    {
+      out <- if (!is.null(x$terms)) 
+        predictors.terms(x$terms)
+      else x$xNames
+      if (is.null(out)) 
+        out <- names(attr(x, "scaling")$x.scale$`scaled:center`)
+      if (is.null(out)) 
+        out <- NA
+      out
+    },
+  tags = c("Kernel Methods", "Support Vector Machines", "Regression", "Classifier", "Robust Methods"),
+  levels = function(x) x$levels,
+  sort = function(x)
+  {
+    x[order(x$cost), ]
+  }
+)
+```
+
+We now train a kNN, decision tree, random forest and radial SVM, each with 9 hyperparameter values.
+
+```{r}
+knnTune <- train(descrTrain,
+                 concRatioTrain,
+                 method='knn',
+                 tuneLength = 9,
+                 trControl = trainctrl)
+knnTune
+dtTune <- train(descrTrain,
+                 concRatioTrain,
+                 method='rpart',
+                 tuneLength = 9,
+                 trControl = trainctrl)
+dtTune
+rfTune <- train(descrTrain,
+                 concRatioTrain,
+                 method='rf',
+                 tuneLength = 9,
+                 trControl = trainctrl)
+rfTune
+svmTune <- train(descrTrain,
+                 concRatioTrain,
+                 method=svmRadialE1071,
+                 tuneLength = 9,
+                 trControl = trainctrl)
+svmTune
+```
+
+Next, we test each model on the test dataset
+
+```{r}
+descrTest <- predict(transformations, descrTest)
+test_pred_knn <- predict(knnTune, descrTest)
+test_pred_dtree <- predict(dtTune, descrTest)
+test_pred_rf <- predict(rfTune, descrTest)
+test_pred_svm <- predict(svmTune, descrTest)
+```
+
+To compare the models against each other, we plot the predicted values against each other in a scatter plot and calculate the correlation between each set of predictions:
+
+```{r}
+qplot(test_pred_knn, test_pred_dtree) + xlab("kNN") + ylab("Decision tree") + theme_bw()
+cor(test_pred_knn, test_pred_dtree)
+qplot(test_pred_knn, test_pred_rf) + xlab("kNN") + ylab("Random forest") + theme_bw()
+cor(test_pred_knn, test_pred_rf)
+qplot(test_pred_knn, test_pred_svm) + xlab("kNN") + ylab("SVM") + theme_bw()
+cor(test_pred_knn, test_pred_svm)
+qplot(test_pred_dtree, test_pred_rf) + xlab("Decision tree") + ylab("Random forest") + theme_bw()
+cor(test_pred_dtree, test_pred_rf)
+qplot(test_pred_dtree, test_pred_svm) + xlab("Decision tree") + ylab("SVM") + theme_bw()
+cor(test_pred_dtree, test_pred_svm)
+qplot(test_pred_rf, test_pred_svm) + xlab("Random forest") + ylab("SVM") + theme_bw()
+cor(test_pred_rf, test_pred_svm)
+```
+
+## Cell segmentation
+
+Now, we focus on the cell segmentation data. In the lecture on Monday, we only tried a radial kernel SVM so now we will try out some other kernel options, namely linear and polynomial. First of all, we prepare the dataset and the cross-validation as usual:
+
+```{r}
+# Load data
+data(segmentationData)
+segClass <- segmentationData$Class
+segData <- segmentationData[,4:59]
+
+# Split into training and test
+set.seed(42)
+trainIndex <- createDataPartition(y=segClass, times=1, p=0.5, list=F)
+segDataTrain <- segData[trainIndex,]
+segDataTest <- segData[-trainIndex,]
+segClassTrain <- segClass[trainIndex]
+segClassTest <- segClass[-trainIndex]
+
+# Set up cross-validation
+set.seed(42)
+seeds <- vector(mode = "list", length = 6)
+for(i in 1:5) seeds[[i]] <- sample.int(1000, 243)
+seeds[[6]] <- sample.int(1000,1)
+cvCtrl <- trainControl(method = "cv", 
+#                       repeats = 5,
+                       number = 5,
+                       summaryFunction = twoClassSummary,
+                       classProbs = TRUE,
+                       seeds=seeds)
+```
+
+Now we train a linear, polynomial and radial SVM and plot their performance on each fold of the training data together.
+
+```{r}
+
+library(doParallel)
+cl <- makePSOCKcluster(5)
+registerDoParallel(cl)
+
+svmLinearTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'svmLinear',
+                   tuneLength = 9,
+                   preProc = c("nzv", "corr", "scale", "center"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+svmPolyTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'svmPoly',
+                   tuneLength = 9,
+                   preProc = c("nzv", "corr", "scale", "center"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+svmRadialTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'svmRadial',
+                   tuneLength = 9,
+                   preProc = c("nzv", "corr", "scale", "center"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+## When you are done:
+stopCluster(cl)
+
+resamps <- resamples(list(svmLinear = svmLinearTune, svmPoly = svmPolyTune, svmRadial = svmRadialTune))
+summary(resamps)
+resamps.df = as.data.frame(resamps)
+resamps.df.melt = reshape2::melt(resamps.df,id_vars=c('Resample'))
+ggplot(resamps.df.melt,aes(x=variable,y=value,color=variable))+geom_boxplot()
+ggplot(resamps.df.melt,aes(x=value,y=..density..,color=variable))+geom_density()
+
+```
+
+Next, we want to compare the performance of SVMs and the other types of models, namely kNN, decision tree, random forest and SVM. We train each type of model and test them on our unseen test data.
+
+```{r, warning=FALSE}
+cl <- makePSOCKcluster(5)
+registerDoParallel(cl)
+
+knnTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'knn',
+                   tuneLength = 9,
+                   preProc = c("nzv", "corr", "scale", "center"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+dtTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'rpart',
+                   tuneLength = 9,
+                   preProc = c("nzv", "corr", "scale", "center"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+rfTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'rf',
+                   tuneLength = 9,
+                   preProc = c("nzv", "corr", "scale", "center"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+test_pred_knn <- predict(knnTune, segDataTest)
+confusionMatrix(test_pred_knn, segClassTest)
+test_pred_dtree <- predict(dtTune, segDataTest)
+confusionMatrix(test_pred_dtree, segClassTest)
+test_pred_rf <- predict(rfTune, segDataTest)
+confusionMatrix(test_pred_rf, segClassTest)
+test_pred_svm <- predict(svmRadialTune, segDataTest)
+confusionMatrix(test_pred_svm, segClassTest)
+confusionMatrix(test_pred_rf, test_pred_svm)
+
+stopCluster(cl)
+```
+
+To understand the differences between the predictions from each type of model, we find all the 'PS' and 'WS' predicted examples for each model and compare them in upset plots.
+
+```{r}
+ps_knn = which(test_pred_knn=='PS')
+ps_dtree = which(test_pred_dtree=='PS')
+ps_rf = which(test_pred_rf=='PS')
+ps_svm = which(test_pred_svm=='PS')
+
+ws_knn = which(test_pred_knn=='WS')
+ws_dtree = which(test_pred_dtree=='WS')
+ws_rf = which(test_pred_rf=='WS')
+ws_svm = which(test_pred_svm=='WS')
+
+library(UpSetR)
+upset(fromList(list('kNN'=ps_knn,'dtree'=ps_dtree,'rf'=ps_rf,'svm'=ps_svm)))
+upset(fromList(list('kNN'=ws_knn,'dtree'=ws_dtree,'rf'=ws_rf,'svm'=ws_svm)))
+```

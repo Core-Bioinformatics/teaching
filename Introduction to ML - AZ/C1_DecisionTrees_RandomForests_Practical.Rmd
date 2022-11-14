@@ -1,0 +1,332 @@
+---
+title: "Decision Trees and Random Forest Practical"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Blood Brain Barrier (Regression)
+
+Firstly, we want to train a decision tree and a random forest on the BBB data. We load the data as usual, split into training and test exactly as before. For decision tree and random forest models, centering and scaling does not affect the model so we focus on removing near-zero variance and highly correlated predictors.
+
+### Decision tree
+
+```{r}
+library(caret)
+
+# Load BBB data
+data(BloodBrain)
+
+# Split into training and test
+set.seed(42)
+trainIndex <- createDataPartition(y=logBBB, times=1, p=0.8, list=F)
+descrTrain <- bbbDescr[trainIndex,]
+concRatioTrain <- logBBB[trainIndex]
+descrTest <- bbbDescr[-trainIndex,]
+concRatioTest <- logBBB[-trainIndex]
+
+# Preprocess training data
+transformations <- preProcess(descrTrain,
+                              method=c("corr", "nzv"),
+                              cutoff=0.75)
+descrTrain <- predict(transformations, descrTrain)
+```
+
+We then train a decision tree, considering 9 different cp values
+
+```{r}
+# Set up seeds
+set.seed(42)
+seeds <- vector(mode = "list", length = 26)
+for(i in 1:25) seeds[[i]] <- sample.int(1000, 50)
+seeds[[26]] <- sample.int(1000,1)
+dtTune <- train(descrTrain,
+                 concRatioTrain,
+                 method='rpart',
+                 tuneLength = 9,
+                 trControl = trainControl(method="cv",
+                                          number = 5,
+#                                          repeats = 5,
+                                          seeds=seeds
+                                          )
+)
+dtTune
+plot(dtTune)
+```
+
+```{r}
+# Display actual tree
+library(rpart.plot)
+rpart.plot(dtTune$finalModel)
+```
+
+
+The resulting tree looks well balanced and features a good variety of predictors. We see 9 different values which can be predicted by this model, however there are some classes with much higher numbers of training examples.
+
+```{r}
+# Observe the results on the test data
+descrTest <- predict(transformations, descrTest)
+test_pred <- predict(dtTune, descrTest)
+qplot(concRatioTest, test_pred) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw()
+cor(concRatioTest, test_pred)
+```
+
+As you can see in the scatter plot, although we can use decision trees for regression, we still essentially perform a classification over several numerical values. In particular, we see that the values with higher numbers of training examples dominate in the test set as well. In this case, the correlation is poor and we see that a decision tree model may not be the most appropriate choice in this case.
+
+```{r}
+# Also consider the results on the training data
+train_pred <- predict(dtTune, descrTrain)
+qplot(concRatioTrain, train_pred) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw()
+cor(concRatioTrain, train_pred)
+```
+
+### Random forest
+
+We also test a random forest model. We expect that the random forest may perform slightly better as, by combining multiple trees, we can predict a wider range of values.
+
+```{r}
+# Train the random forest with 9 different mtry values.
+rfTune <- train(descrTrain,
+                 concRatioTrain,
+                 method='rf',
+                 tuneLength = 9,
+                 trControl = trainControl(method="cv",
+                                          number = 5,
+                                          #repeats = 5,
+                                          seeds=seeds
+                                          )
+)
+rfTune
+plot(rfTune)
+
+# Predict outcomes on the test data
+descrTest <- predict(transformations, descrTest)
+test_pred <- predict(rfTune, descrTest)
+qplot(concRatioTest, test_pred) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw()
+cor(concRatioTest, test_pred)
+```
+
+By combining more decision trees, the random forest classifier allows us to predict a wider range of values. We see slightly better correlation on the random forest but we still saw better performance in the kNN.
+
+```{r}
+# Also predict outcomes on the training data
+train_pred <- predict(rfTune, descrTrain)
+qplot(concRatioTrain, train_pred) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw()
+cor(concRatioTrain, train_pred)
+```
+
+On the training data, we see a clear relationship between observed and predicted values.
+
+## Cell segmentation
+
+Now, we focus on the cell segmentation data. Firstly, we train a random forest on the full training dataset.
+
+```{r}
+# Load data
+data(segmentationData)
+segClass <- segmentationData$Class
+segData <- segmentationData[,4:59]
+
+# Split into training and test
+set.seed(42)
+trainIndex <- createDataPartition(y=segClass, times=1, p=0.5, list=F)
+segDataTrain <- segData[trainIndex,]
+segDataTest <- segData[-trainIndex,]
+segClassTrain <- segClass[trainIndex]
+segClassTest <- segClass[-trainIndex]
+
+# Set up cross-validation
+set.seed(42)
+seeds <- vector(mode = "list", length = 51)
+for(i in 1:50) seeds[[i]] <- sample.int(1000, 9)
+seeds[[51]] <- sample.int(1000,1)
+cvCtrl <- trainControl(method = "cv", 
+#                       repeats = 5,
+                       number = 10,
+                       summaryFunction = twoClassSummary,
+                       classProbs = TRUE,
+                       seeds=seeds)
+
+# Train random forest with 9 mtry values
+rfTune <- train(x = segDataTrain,
+                   y = segClassTrain,
+                   method = 'rf',
+                   tuneLength = 9,
+                   preProc = c("nzv", "corr"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+rfTune
+plot(rfTune, metric = "ROC", scales = list(x = list(log = 2)))
+
+# Predict performance on test data
+rfPred <- predict(rfTune, segDataTest)
+confusionMatrix(rfPred, segClassTest)
+
+# Predict performance on test data using class probabilities
+rfProbs <- predict(rfTune, segDataTest, type="prob")
+head(rfProbs)
+library(pROC)
+
+# Compute ROC 
+rfROC <- roc(segClassTest, rfProbs[,"PS"])
+auc(rfROC)
+plot(rfROC, type = "S")
+auc(rfROC)
+```
+
+### Subsampling Cell Segmentation data - Random Forest
+
+We now want to see what the effect is of subsampling the larger class (PS) to the same size as the smaller class. We perform this exactly as we did for the kNN example. First we load the data exactly as before:
+
+```{r echo=T}
+# Load the data as before
+data(segmentationData)
+str(segmentationData)
+segClass <- segmentationData$Class
+segData <- segmentationData[,4:59]
+set.seed(42)
+trainIndex <- createDataPartition(y=segClass, times=1, p=0.5, list=F)
+segDataTrain <- segData[trainIndex,]
+segDataTest <- segData[-trainIndex,]
+segClassTrain <- segClass[trainIndex]
+segClassTest <- segClass[-trainIndex]
+summary(segClassTrain)
+summary(segClassTest)
+```
+
+We then need to down-sample the larger class:
+
+```{r}
+set.seed(42)
+segSub <- downSample(segDataTrain, segClassTrain, list = FALSE, yname = "Class")
+segDataTrainSub <- segSub[,1:(ncol(segSub)-1)]
+segClassTrainSub <- segSub$Class
+```
+
+Now we train the random forest and observe the resulting performance.
+
+```{r}
+# Set up cross-validation
+set.seed(42)
+seeds <- vector(mode = "list", length = 51)
+for(i in 1:50) seeds[[i]] <- sample.int(1000, 9)
+seeds[[51]] <- sample.int(1000,1)
+cvCtrl <- trainControl(method = "cv", 
+#                       repeats = 5,
+                       number = 5,
+                       summaryFunction = twoClassSummary,
+                       classProbs = TRUE,
+                       seeds=seeds)
+
+# Train random forest
+rfTune <- train(x = segDataTrainSub,
+                   y = segClassTrainSub,
+                   method = 'rf',
+                   tuneLength = 9,
+                   preProc = c("nzv","corr"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+rfTune
+plot(rfTune, metric = "ROC", scales = list(x = list(log =2)))
+```
+
+We then test the model on our test data, firstly just predicting classes:
+
+```{r}
+# Predict outcome on test data
+rfPred <- predict(rfTune, segDataTest)
+confusionMatrix(rfPred, segClassTest)
+```
+
+Now, we predict class probabilities so we can build a ROC curve:
+
+```{r}
+# Predict outcome on test data using class probabilities
+rfProbs <- predict(rfTune, segDataTest, type="prob")
+head(rfProbs)
+rfROC <- roc(segClassTest, rfProbs[,"PS"])
+auc(rfROC)
+plot(rfROC, type = "S")
+auc(rfROC)
+```
+
+We can then do exactly the same on the subsampled training data:
+
+```{r}
+rfPred <- predict(rfTune, segDataTrainSub)
+confusionMatrix(rfPred, segClassTrainSub)
+
+rfProbs <- predict(rfTune, segDataTrainSub, type="prob")
+head(rfProbs)
+rfROC <- roc(segClassTrainSub, rfProbs[,"PS"])
+auc(rfROC)
+plot(rfROC, type = "S")
+auc(rfROC)
+
+```
+
+### Subsampling Cell Segmentation data - Decision tree
+
+Exactly as for random forests, we train our decision tree:
+
+```{r}
+# Train decision tree
+dtreeTune <- train(x = segDataTrainSub,
+                   y = segClassTrainSub,
+                   method = 'rpart',
+                   tuneLength = 9,
+                   preProc = c("nzv","corr"),
+                   metric = "ROC",
+                   trControl = cvCtrl)
+
+dtreeTune
+plot(dtreeTune, metric = "ROC", scales = list(x = list(log =2)))
+```
+
+We then test it on the test data, using classes then class probabilities:
+
+```{r}
+# Predict outcome on test data
+dtreePred <- predict(dtreeTune, segDataTest)
+confusionMatrix(dtreePred, segClassTest)
+
+# Predict outcome on test data using class probabilities
+dtreeProbs <- predict(dtreeTune, segDataTest, type="prob")
+head(dtreeProbs)
+dtreeROC <- roc(segClassTest, dtreeProbs[,"PS"])
+auc(dtreeROC)
+plot(dtreeROC, type = "S")
+auc(dtreeROC)
+```
+
+Again, we do the same for the subsampled training data:
+
+```{r}
+dtreePred <- predict(dtreeTune, segDataTrainSub)
+confusionMatrix(dtreePred, segClassTrainSub)
+
+dtreeProbs <- predict(dtreeTune, segDataTrainSub, type="prob")
+head(dtreeProbs)
+dtreeROC <- roc(segClassTrainSub, dtreeProbs[,"PS"])
+auc(dtreeROC)
+plot(dtreeROC, type = "S")
+auc(dtreeROC)
+```
+
+As we saw in the kNN example, we see much more even performance between the PS and WS examples now, if anything performing better on the WS examples now than on the PS examples!

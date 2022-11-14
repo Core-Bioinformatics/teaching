@@ -603,18 +603,6 @@ dtreeTune
 prp(dtreeTune$finalModel)
 ```
 
-```{r echo=T, eval=FALSE}
-rfTune <- train(x = segDataTrain,
-                   y = segClassTrain,
-                   method = 'rf',
-                   tuneLength = 9,
-                   preProc = c("center", "scale"),
-                   metric = "ROC",
-                   trControl = cvCtrl)
-
-rfTune
-```
-
 decision tree accuracy profile
 ```{r dtreeAccuracyProfileCellSegment, fig.cap='dtree accuracy profile.', out.width='80%', fig.asp=0.7, fig.align='center', echo=T}
 plot(dtreeTune, metric = "ROC", scales = list(x = list(log =2)))

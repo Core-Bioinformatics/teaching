@@ -1,0 +1,181 @@
+---
+title: "k-Nearest Neighbours Practical"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Blood Brain Barrier (Regression)
+
+We want to test whether removing the 'outlier' points in the test set improves the correlation between predicted and observed values. To do this, we prepare the dataset exactly as before and train a kNN.
+
+```{r}
+# Load dataset
+library(caret)
+data(BloodBrain)
+str(bbbDescr)
+str(logBBB)
+set.seed(42)
+
+# Split into training and test
+trainIndex <- createDataPartition(y=logBBB, times=1, p=0.8, list=F)
+descrTrain <- bbbDescr[trainIndex,]
+concRatioTrain <- logBBB[trainIndex]
+descrTest <- bbbDescr[-trainIndex,]
+concRatioTest <- logBBB[-trainIndex]
+
+# Preprocess
+transformations <- preProcess(descrTrain,
+                              method=c("center", "scale", "corr", "nzv"),
+                              cutoff=0.75)
+descrTrain <- predict(transformations, descrTrain)
+
+# Set up seeds
+set.seed(42)
+seeds <- vector(mode = "list", length = 26)
+for(i in 1:25) seeds[[i]] <- sample.int(1000, 10)
+seeds[[26]] <- sample.int(1000,1)
+
+# Train kNN
+knnTune <- train(descrTrain,
+                 concRatioTrain,
+                 method="knn",
+                 tuneGrid = data.frame(.k=1:10),
+                 trControl = trainControl(method="repeatedcv",
+                                          number = 5,
+                                          repeats = 5,
+                                          seeds=seeds,
+                                          preProcOptions=list(cutoff=0.75))
+                 )
+
+knnTune
+plot(knnTune)
+
+# Use kNN to predict on test set
+descrTest <- predict(transformations, descrTest)
+test_pred <- predict(knnTune, descrTest)
+
+# Scatter plot comparing test observed and predicted values
+qplot(concRatioTest, test_pred) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw()
+
+# Calculate correlation between predicted and observed values
+cor(concRatioTest, test_pred)
+```
+
+We can also do the same for the training data and see quite high correlation between predicted and observed:
+
+```{r}
+train_pred <- predict(knnTune, descrTrain)
+
+# Scatter plot comparing training observed and predicted values
+qplot(concRatioTrain, train_pred) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw()
+
+# Calculate correlation between predicted and observed values
+cor(concRatioTrain, train_pred)
+```
+
+To identify which points to remove, we could use a number of techniques for outlier selection. For simplicity here, we will just remove the points where the predicted and observed and more than 1 away from each other, which is quite a conservative approach. To visualise which points we will remove, we plot y=x+1 and y=x-1.
+
+```{r}
+qplot(concRatioTest, test_pred) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw() + 
+  geom_abline(slope=1,intercept=1) + 
+  geom_abline(slope=1,intercept=-1)
+```
+
+We then identify those points and replot:
+
+```{r}
+outliers = concRatioTest>(test_pred+1) | concRatioTest<(test_pred-1)
+qplot(concRatioTest[!outliers], test_pred[!outliers]) + 
+  xlab("observed") +
+  ylab("predicted") +
+  theme_bw() + 
+  geom_abline(slope=1,intercept=1) + 
+  geom_abline(slope=1,intercept=-1)
+```
+
+Now we recalculate the correlation:
+
+```{r}
+cor(concRatioTest[!outliers], test_pred[!outliers])
+```
+
+We see that the value is much higher, even from removing very few points.
+
+## Cell segmentation
+
+In the cell segmentation data, we want to understand whether subsampling the larger class (PS) would help the model perform better. We start off by loading the data and splitting into training and test exactly as before.
+
+```{r echo=T}
+data(segmentationData)
+str(segmentationData)
+segClass <- segmentationData$Class
+segData <- segmentationData[,4:59]
+set.seed(42)
+trainIndex <- createDataPartition(y=segClass, times=1, p=0.5, list=F)
+segDataTrain <- segData[trainIndex,]
+segDataTest <- segData[-trainIndex,]
+segClassTrain <- segClass[trainIndex]
+segClassTest <- segClass[-trainIndex]
+summary(segClassTrain)
+summary(segClassTest)
+```
+
+We then need to down-sample the larger class:
+
+```{r}
+set.seed(42)
+segSub <- downSample(segDataTrain, segClassTrain, list = FALSE, yname = "Class")
+segDataTrainSub <- segSub[,1:(ncol(segSub)-1)]
+segClassTrainSub <- segSub$Class
+```
+
+After that, we train the model exactly as before:
+
+```{r}
+set.seed(42)
+seeds <- vector(mode = "list", length = 26)
+for(i in 1:25) seeds[[i]] <- sample.int(1000, 50)
+seeds[[26]] <- sample.int(1000,1)
+train_ctrl <- trainControl(method="repeatedcv",
+                   number = 5,
+                   repeats = 5,
+                   #preProcOptions=list(cutoff=0.75),
+                   seeds = seeds)
+tuneParam <- data.frame(k=seq(5,500,10))
+transformations <- preProcess(segDataTrainSub, 
+                              method=c("YeoJohnson", "center", "scale", "corr"),
+                              cutoff=0.75)
+segDataTrainSub <- predict(transformations, segDataTrainSub)
+str(segDataTrainSub)
+knnFit <- train(segDataTrainSub, segClassTrainSub, 
+                method="knn",
+                tuneGrid=tuneParam,
+                trControl=train_ctrl)
+knnFit
+```
+
+We can look at the performance on the training and test sets after subsampling:
+
+```{r}
+train_pred <- predict(knnFit, segDataTrainSub)
+confusionMatrix(train_pred, segClassTrainSub)
+
+plot(knnFit)
+segDataTestPrep <- predict(transformations, segDataTest)
+test_pred <- predict(knnFit, segDataTestPrep)
+confusionMatrix(test_pred, segClassTest)
+```
+
+After we perform the subsampling, we actually now get better performance on the WS set compared to the PS set.
